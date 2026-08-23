@@ -1,0 +1,21 @@
+# Dependencies
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Tooling
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
