@@ -52,6 +52,7 @@ def order_sheet_payload(order: Order, product_name: str) -> dict:
         "landing_url": order.landing_url or "",
         "source": order.source,
         "items_json": json.dumps(items, ensure_ascii=False),
+        "address": order.address or "",
     }
 
 

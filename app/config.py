@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     site_url: str = "https://chifaglow.com"
     cors_origins: str = "https://chifaglow.com,https://www.chifaglow.com"
     database_url: str = (
-        "postgres://chifaglow:chifaglow@chifaglow_chifaglow:5432/chifaglow?sslmode=disable"
+        "postgres://database:database@chifaglow_database:5432/database?sslmode=disable"
     )
 
     google_sheets_webhook_url: str = ""
@@ -31,6 +31,10 @@ class Settings(BaseSettings):
 
     snapchat_pixel_id: str = ""
     snapchat_capi_token: str = ""
+
+    maxmind_account_id: str = ""
+    maxmind_license_key: str = ""
+    enable_ip_fraud_check: bool = True
 
     @property
     def sqlalchemy_url(self) -> str:

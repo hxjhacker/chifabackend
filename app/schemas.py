@@ -5,6 +5,7 @@ class OrderCreate(BaseModel):
     full_name: str = Field(min_length=3, max_length=80)
     phone: str = Field(min_length=9, max_length=20)
     city: str = Field(min_length=2, max_length=80)
+    address: str | None = Field(default=None, max_length=240)
     product_slug: str
     tier_qty: int = Field(ge=1, le=3)
     cross_sell_slug: str | None = None

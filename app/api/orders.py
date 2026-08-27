@@ -9,6 +9,7 @@ from app.models import Order, OrderItem, Product
 from app.schemas import OrderCreate, UpsellCreate
 from app.services.capi import send_purchase
 from app.services.cities import find_city
+from app.services.fraud import ip_is_blocked
 from app.services.phone import normalize_ma_phone, to_national
 from app.services.pricing import (
     CROSS_SELL_CENTS,
@@ -99,6 +100,10 @@ def create_order(
     if existing:
         return _serialize(existing)
 
+    client_ip = _client_ip(request)
+    if ip_is_blocked(client_ip):
+        raise HTTPException(status_code=403, detail="order_blocked")
+
     tier_cents, cross_cents, subtotal = compute_subtotal(payload.tier_qty, bool(payload.cross_sell_slug))
     order = Order(
         full_name=payload.full_name.strip(),
@@ -118,7 +123,7 @@ def create_order(
         ttclid=payload.ttclid,
         sccid=payload.sccid,
         landing_url=payload.landing_url,
-        client_ip=_client_ip(request),
+        client_ip=client_ip,
         user_agent=request.headers.get("user-agent"),
     )
     session.add(order)

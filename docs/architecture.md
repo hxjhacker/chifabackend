@@ -32,7 +32,7 @@ TikTok / Meta / Snap ads
            │                     │
            ▼                     ▼
    PostgreSQL (Easypanel)   Google Apps Script
-   host: chifaglow_chifaglow    → Sheet "Orders"
+   host: chifaglow_database    → Sheet "Orders"
 ```
 
 Event `event_id` is generated in the browser (UUID v4) and reused on:
@@ -235,7 +235,7 @@ Public env vars are baked at **image build time** (`ARG` / `ENV` in the frontend
 |---|---|---|---|
 | `frontend` | Next.js standalone | 3000 | Map domain `chifaglow.com` |
 | `backend` | Uvicorn | 8000 | Map domain `api.chifaglow.com` |
-| Postgres | Easypanel managed | 5432 | host `chifaglow_chifaglow` — **do not** start compose `db` in production |
+| Postgres | Easypanel managed | 5432 | host `chifaglow_database` — **do not** start compose `db` in production |
 
 Local-only database:
 
