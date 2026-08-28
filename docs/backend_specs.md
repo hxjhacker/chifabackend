@@ -15,7 +15,7 @@ Stack: FastAPI, SQLModel, Alembic, PostgreSQL, httpx, Pydantic Settings.
 `DATABASE_URL` example (Easypanel):
 
 ```text
-postgres://database:database@chifaglow_database:5432/database?sslmode=disable
+postgres://chifaglow:chifaglow@chifaglow_chifaglow:5432/chifaglow?sslmode=disable
 ```
 
 Normalized internally to `postgresql+psycopg2://…`.
