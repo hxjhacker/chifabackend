@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     site_url: str = "https://chifaglow.com"
     cors_origins: str = "https://chifaglow.com,https://www.chifaglow.com"
     database_url: str = (
-        "postgres://chifaglow:chifaglow@chifaglow_chifaglow:5432/chifaglow?sslmode=disable"
+        "postgres://chifaglow:chifaglow@chifaglow_database:5432/chifaglow?sslmode=disable"
     )
 
     google_sheets_webhook_url: str = ""
