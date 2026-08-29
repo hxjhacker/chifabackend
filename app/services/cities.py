@@ -116,7 +116,15 @@ CITIES: list[dict[str, object]] = [
 
 
 def _norm(value: str) -> str:
-    return (value or "").strip().lower().replace("é", "e").replace("è", "e").replace("â", "a")
+    return (
+        (value or "")
+        .strip()
+        .lower()
+        .replace("é", "e")
+        .replace("è", "e")
+        .replace("â", "a")
+        .replace("à", "a")
+    )
 
 
 def find_city(raw: str) -> dict[str, object] | None:
@@ -128,7 +136,14 @@ def find_city(raw: str) -> dict[str, object] | None:
         hay.extend(_norm(a) for a in city.get("aliases") or [])  # type: ignore[union-attr]
         if needle in hay:
             return city
-    return None
+    if len(needle) >= 3:
+        for city in CITIES:
+            hay = [_norm(str(city["ar"])), _norm(str(city["fr"]))]
+            hay.extend(_norm(a) for a in city.get("aliases") or [])  # type: ignore[union-attr]
+            if any(len(h) >= 3 and (needle in h or h in needle) for h in hay):
+                return city
+    label = raw.strip()
+    return {"ar": label, "fr": label, "aliases": []}
 
 
 def city_latin(raw: str) -> str:
