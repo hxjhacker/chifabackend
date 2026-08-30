@@ -4,7 +4,11 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    ADMIN_USERNAME=MOhammed2003 \
+    ADMIN_PASSWORD=simo25082003elyoussfiM# \
+    ADMIN_JWT_SECRET=204a308d75e24d90b8e47391e1cc9d33b2b08cce2dcd4482a2276542bd346504 \
+    ADMIN_JWT_HOURS=12
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
