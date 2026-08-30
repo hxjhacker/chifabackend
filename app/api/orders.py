@@ -7,14 +7,12 @@ from sqlmodel import Session, select
 from app.db import get_session
 from app.models import Order, OrderItem, Product
 from app.schemas import OrderCreate, UpsellCreate
-from app.seed import CATALOG
 from app.services.capi import send_purchase
 from app.services.cities import find_city
 from app.services.fraud import ip_is_blocked
 from app.services.phone import normalize_ma_phone, to_national
 from app.services.pricing import (
     CROSS_SELL_CENTS,
-    EDUCATIVE_TIER_PRICE_CENTS,
     PRODUCT_SLUGS,
     TIER_PRICE_CENTS,
     UPSELL_CENTS,
@@ -85,26 +83,14 @@ def create_order(
     if not city:
         raise HTTPException(status_code=422, detail="invalid_city")
 
-    if payload.tier_qty not in TIER_PRICE_CENTS and payload.tier_qty not in EDUCATIVE_TIER_PRICE_CENTS:
+    if payload.tier_qty not in TIER_PRICE_CENTS:
         raise HTTPException(status_code=422, detail="invalid_tier")
     if payload.product_slug not in PRODUCT_SLUGS:
         raise HTTPException(status_code=422, detail="invalid_product")
 
     product = session.exec(select(Product).where(Product.slug == payload.product_slug)).first()
     if not product:
-        catalog = next((item for item in CATALOG if item["slug"] == payload.product_slug), None)
-        if not catalog:
-            raise HTTPException(status_code=404, detail="product_not_found")
-        product = Product(
-            slug=catalog["slug"],
-            name_ar=catalog["name_ar"],
-            name_en=catalog["name_en"],
-            tagline_ar=catalog["tagline_ar"],
-            description_ar=catalog["description_ar"],
-            accent=catalog["accent"],
-        )
-        session.add(product)
-        session.flush()
+        raise HTTPException(status_code=404, detail="product_not_found")
 
     if payload.cross_sell_slug:
         if payload.cross_sell_slug == payload.product_slug or payload.cross_sell_slug not in PRODUCT_SLUGS:
@@ -118,15 +104,12 @@ def create_order(
     if ip_is_blocked(client_ip):
         raise HTTPException(status_code=403, detail="order_blocked")
 
-    tier_cents, cross_cents, subtotal = compute_subtotal(
-        payload.tier_qty, bool(payload.cross_sell_slug), payload.product_slug
-    )
+    tier_cents, cross_cents, subtotal = compute_subtotal(payload.tier_qty, bool(payload.cross_sell_slug))
     order = Order(
         full_name=payload.full_name.strip(),
         phone=e164,
         phone_national=to_national(e164),
         city=str(city["ar"]),
-        address=(payload.address or "").strip() or None,
         product_slug=payload.product_slug,
         tier_qty=payload.tier_qty,
         tier_price_cents=tier_cents,
