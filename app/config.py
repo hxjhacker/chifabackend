@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     maxmind_license_key: str = ""
     enable_ip_fraud_check: bool = True
 
+    admin_username: str = ""
+    admin_password: str = ""
+    admin_password_hash: str = ""
+    admin_jwt_secret: str = ""
+    admin_jwt_hours: int = 12
+
     @property
     def sqlalchemy_url(self) -> str:
         return _to_sqlalchemy(self.database_url)
