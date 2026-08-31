@@ -396,9 +396,12 @@ def admin_create_order(
     if len(name) < 3:
         raise HTTPException(status_code=422, detail="invalid_name")
     try:
-        from app.services.phone import normalize_ma_phone, to_national
+        from app.services.phone import digits_only, normalize_ma_phone, to_national
 
-        e164 = normalize_ma_phone(str(body.get("phone") or ""))
+        raw_phone = str(body.get("phone") or "")
+        if len(digits_only(raw_phone)) != 10:
+            raise ValueError("invalid_ma_phone")
+        e164 = normalize_ma_phone(raw_phone)
     except Exception as exc:
         raise HTTPException(status_code=422, detail="invalid_ma_phone") from exc
     if not e164:
