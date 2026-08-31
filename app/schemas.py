@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class OrderCreate(BaseModel):
@@ -71,6 +71,70 @@ class OrderUpdate(BaseModel):
     landmark: str | None = None
     delivery_window: str | None = None
     cross_sell_price_mad: float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_aliases(cls, data: object):
+        if not isinstance(data, dict):
+            return data
+        aliases = {
+            "full_name": ("full_name", "fullName", "customer_name", "customerName"),
+            "customer_name": ("customer_name", "customerName"),
+            "region": ("region", "region_id", "regionId"),
+            "region_id": ("region_id", "regionId", "region"),
+            "address": ("address", "full_address", "fullAddress"),
+            "full_address": ("full_address", "fullAddress"),
+            "product_slug": ("product_slug", "productSlug", "primary_product", "primaryProduct"),
+            "primary_product": ("primary_product", "primaryProduct"),
+            "tier_qty": ("tier_qty", "tierQty", "primary_qty", "primaryQty"),
+            "primary_qty": ("primary_qty", "primaryQty"),
+            "bundle_enabled": ("bundle_enabled", "bundleEnabled"),
+            "cross_sell_slug": ("cross_sell_slug", "crossSellSlug", "secondary_product", "secondaryProduct"),
+            "secondary_product": ("secondary_product", "secondaryProduct"),
+            "secondary_qty": ("secondary_qty", "secondaryQty"),
+            "total_mad": ("total_mad", "totalMad", "total_price", "totalPrice"),
+            "total_price": ("total_price", "totalPrice"),
+            "courier_notes": ("courier_notes", "courierNotes", "driver_comment", "driverComment"),
+            "driver_comment": ("driver_comment", "driverComment"),
+            "cross_sell_price_mad": ("cross_sell_price_mad", "crossSellPriceMad"),
+        }
+        out = dict(data)
+        for dest, keys in aliases.items():
+            if dest in out and out[dest] is not None:
+                continue
+            for key in keys:
+                if key in data:
+                    out[dest] = data[key]
+                    break
+
+        def as_num(value: object):
+            if value is None or value == "":
+                return None
+            try:
+                return float(value)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return None
+
+        def as_flag(value: object):
+            if isinstance(value, bool) or value is None:
+                return value
+            text = str(value).strip().lower()
+            if text in ("true", "1"):
+                return True
+            if text in ("false", "0"):
+                return False
+            return value
+
+        for key in ("tier_qty", "primary_qty", "secondary_qty"):
+            if key in out and out[key] is not None:
+                parsed = as_num(out[key])
+                out[key] = int(parsed) if parsed is not None else None
+        for key in ("total_mad", "total_price", "cross_sell_price_mad"):
+            if key in out and out[key] is not None:
+                out[key] = as_num(out[key])
+        if "bundle_enabled" in out:
+            out["bundle_enabled"] = as_flag(out["bundle_enabled"])
+        return out
 
 
 class AdminOrderPatch(OrderUpdate):

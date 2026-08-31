@@ -36,7 +36,7 @@ class Order(SQLModel, table=True):
     landmark: str | None = Field(default=None, max_length=160)
     delivery_window: str | None = Field(default=None, max_length=32)
     courier_notes: str | None = Field(default=None)
-    region_id: str | None = Field(default=None, max_length=8)
+    region_id: str | None = Field(default=None, max_length=32)
     bundle_enabled: bool = False
     secondary_qty: int = 1
     product_slug: str = Field(max_length=64)

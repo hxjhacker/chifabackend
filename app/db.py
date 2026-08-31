@@ -14,14 +14,16 @@ engine = create_engine(
 
 ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS address text",
-    "ALTER TABLE orders ALTER COLUMN address TYPE text",
+    "ALTER TABLE orders ALTER COLUMN address TYPE text USING address::text",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS quartier varchar(120)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS street varchar(160)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS building varchar(80)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS landmark varchar(160)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_window varchar(32)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier_notes text",
-    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS region_id varchar(8)",
+    "ALTER TABLE orders ALTER COLUMN courier_notes TYPE text USING courier_notes::text",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS region_id varchar(32)",
+    "ALTER TABLE orders ALTER COLUMN region_id TYPE varchar(32)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS bundle_enabled boolean DEFAULT false",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS secondary_qty integer DEFAULT 1",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS source varchar(32) DEFAULT 'website'",

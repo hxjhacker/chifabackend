@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import inspect, or_, text
 from sqlmodel import Session, select
 
 from app.db import get_session
@@ -122,19 +122,34 @@ def _resolve_region(value: str | None) -> str | None:
     return None
 
 
-def _stamp_status(order: Order, status_value: str) -> None:
+def _stamp_status(order: Order, status_value: str, cols: set[str] | None = None) -> None:
     now = datetime.now(timezone.utc)
+    known = cols if cols is not None else set()
     if status_value in ("confirmed", "shipped", "delivered") and not order.confirmed_at:
-        order.confirmed_at = now
+        _assign(order, known, "confirmed_at", now)
     if status_value in ("shipped", "delivered") and not order.shipped_at:
-        order.shipped_at = now
+        _assign(order, known, "shipped_at", now)
     if status_value == "delivered" and not order.delivered_at:
-        order.delivered_at = now
+        _assign(order, known, "delivered_at", now)
     if status_value == "cancelled" and not order.cancelled_at:
-        order.cancelled_at = now
+        _assign(order, known, "cancelled_at", now)
 
 
-def apply_order_update(order: Order, payload: OrderUpdate) -> Order:
+def _order_column_names(session: Session) -> set[str]:
+    try:
+        return {col["name"] for col in inspect(session.get_bind()).get_columns("orders")}
+    except Exception:
+        return set()
+
+
+def _assign(order: Order, cols: set[str], name: str, value: object) -> None:
+    if cols and name not in cols:
+        return
+    setattr(order, name, value)
+
+
+def apply_order_update(order: Order, payload: OrderUpdate, cols: set[str] | None = None) -> Order:
+    known = cols if cols is not None else set()
     data = payload.model_dump(exclude_unset=True)
     if "customer_name" in data and "full_name" not in data:
         data["full_name"] = data["customer_name"]
@@ -158,53 +173,54 @@ def apply_order_update(order: Order, payload: OrderUpdate) -> Order:
     if "status" in data and data["status"]:
         if data["status"] not in ALLOWED_STATUSES:
             raise HTTPException(status_code=422, detail="invalid_status")
-        order.status = data["status"]
-        _stamp_status(order, data["status"])
+        _assign(order, known, "status", data["status"])
+        _stamp_status(order, data["status"], known)
     if "full_name" in data and data["full_name"]:
-        name = str(data["full_name"]).strip()
+        name = str(data["full_name"]).strip()[:160]
         if len(name) < 3:
             raise HTTPException(status_code=422, detail="invalid_name")
-        order.full_name = name
+        _assign(order, known, "full_name", name)
     if "city" in data and data["city"]:
-        order.city = str(data["city"]).strip()
+        _assign(order, known, "city", str(data["city"]).strip()[:120])
     if "product_slug" in data and data["product_slug"]:
-        order.product_slug = str(data["product_slug"])
+        _assign(order, known, "product_slug", str(data["product_slug"]))
     if "tier_qty" in data and data["tier_qty"]:
         qty = int(data["tier_qty"])
         if qty < 1 or qty > 20:
             raise HTTPException(status_code=422, detail="invalid_qty")
-        order.tier_qty = qty
+        _assign(order, known, "tier_qty", qty)
     if "total_mad" in data and data["total_mad"] is not None:
         cents = int(round(float(data["total_mad"]) * 100))
         if cents < 100:
             raise HTTPException(status_code=422, detail="invalid_price")
-        order.total_cents = cents
-        order.subtotal_cents = cents
-        order.tier_price_cents = cents
+        _assign(order, known, "total_cents", cents)
+        _assign(order, known, "subtotal_cents", cents)
+        _assign(order, known, "tier_price_cents", cents)
     for field in ("quartier", "street", "building", "landmark", "delivery_window", "courier_notes"):
         if field in data:
-            value = (data[field] or "").strip() or None
-            setattr(order, field, value)
+            value = str(data[field] or "").strip() or None
+            _assign(order, known, field, value)
     if "address" in data:
-        order.address = (str(data["address"]) if data["address"] is not None else "").strip() or None
+        _assign(order, known, "address", (str(data["address"]) if data["address"] is not None else "").strip() or None)
     if "region_id" in data:
-        order.region_id = _resolve_region(str(data["region_id"]) if data["region_id"] is not None else None)
+        _assign(order, known, "region_id", _resolve_region(str(data["region_id"]) if data["region_id"] is not None else None))
     if "bundle_enabled" in data:
-        order.bundle_enabled = bool(data["bundle_enabled"])
+        _assign(order, known, "bundle_enabled", bool(data["bundle_enabled"]))
     if "secondary_qty" in data and data["secondary_qty"]:
         qty = int(data["secondary_qty"])
         if qty < 1 or qty > 20:
             raise HTTPException(status_code=422, detail="invalid_qty")
-        order.secondary_qty = qty
+        _assign(order, known, "secondary_qty", qty)
     if "cross_sell_slug" in data:
-        order.cross_sell_slug = data["cross_sell_slug"] or None
-        if not order.cross_sell_slug:
-            order.bundle_enabled = False
+        slug = data["cross_sell_slug"] or None
+        _assign(order, known, "cross_sell_slug", slug)
+        if not slug:
+            _assign(order, known, "bundle_enabled", False)
         else:
-            order.bundle_enabled = True
+            _assign(order, known, "bundle_enabled", True)
     if "cross_sell_price_mad" in data and data["cross_sell_price_mad"] is not None:
-        order.cross_sell_price_cents = int(round(float(data["cross_sell_price_mad"]) * 100))
-    order.updated_at = datetime.now(timezone.utc)
+        _assign(order, known, "cross_sell_price_cents", int(round(float(data["cross_sell_price_mad"]) * 100)))
+    _assign(order, known, "updated_at", datetime.now(timezone.utc))
     return order
 
 
@@ -347,8 +363,56 @@ def admin_update_order(
     order = session.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="order_not_found")
-    apply_order_update(order, payload)
-    session.add(order)
-    session.commit()
-    session.refresh(order)
-    return _serialize_order(order)
+    cols = _order_column_names(session)
+    try:
+        apply_order_update(order, payload, cols)
+        session.add(order)
+        session.commit()
+        session.refresh(order)
+        return _serialize_order(order)
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception:
+        session.rollback()
+        data = payload.model_dump(exclude_unset=True)
+        name = str(data.get("full_name") or data.get("customer_name") or order.full_name or "").strip()[:160]
+        city = str(data.get("city") or order.city or "").strip()[:120]
+        slug = str(data.get("product_slug") or data.get("primary_product") or order.product_slug)
+        qty = int(data.get("tier_qty") or data.get("primary_qty") or order.tier_qty or 1)
+        total = data.get("total_mad") if data.get("total_mad") is not None else data.get("total_price")
+        cents = int(round(float(total) * 100)) if total is not None else order.total_cents
+        status_value = str(data.get("status") or order.status)
+        try:
+            session.execute(
+                text(
+                    """
+                    UPDATE orders SET
+                      full_name = :full_name,
+                      city = :city,
+                      product_slug = :product_slug,
+                      tier_qty = :tier_qty,
+                      total_cents = :total_cents,
+                      status = :status,
+                      updated_at = now()
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": str(order_id),
+                    "full_name": name or order.full_name,
+                    "city": city or order.city,
+                    "product_slug": slug,
+                    "tier_qty": qty,
+                    "total_cents": cents,
+                    "status": status_value,
+                },
+            )
+            session.commit()
+        except Exception as exc:
+            session.rollback()
+            raise HTTPException(status_code=500, detail="update_failed") from exc
+        order = session.get(Order, order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="order_not_found")
+        return _serialize_order(order)
