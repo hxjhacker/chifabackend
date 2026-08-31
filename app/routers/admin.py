@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
@@ -63,13 +63,26 @@ def _pack_label(order: Order) -> str:
     return " + ".join(parts)
 
 
+def _iso(value: object) -> str | None:
+    if value is None:
+        return None
+    iso = getattr(value, "isoformat", None)
+    if callable(iso):
+        try:
+            dt = value
+            tzinfo = getattr(dt, "tzinfo", None)
+            if tzinfo is None and hasattr(dt, "replace"):
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.isoformat()
+        except Exception:
+            return str(value)
+    return str(value)
+
+
 def _serialize_order(order: Order) -> dict:
-    created = order.created_at
-    if created and created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
     return {
         "order_id": str(order.id),
-        "created_at": created.isoformat() if created else None,
+        "created_at": _iso(order.created_at),
         "full_name": order.full_name,
         "city": order.city,
         "phone": order.phone,
@@ -83,17 +96,17 @@ def _serialize_order(order: Order) -> dict:
         "currency": order.currency,
         "status": _display_status(order.status),
         "raw_status": order.status,
-        "address": order.address,
-        "quartier": order.quartier,
-        "street": order.street,
-        "building": order.building,
-        "landmark": order.landmark,
-        "delivery_window": order.delivery_window,
-        "courier_notes": order.courier_notes,
-        "driver_comment": order.courier_notes,
+        "address": getattr(order, "address", None),
+        "quartier": getattr(order, "quartier", None),
+        "street": getattr(order, "street", None),
+        "building": getattr(order, "building", None),
+        "landmark": getattr(order, "landmark", None),
+        "delivery_window": getattr(order, "delivery_window", None),
+        "courier_notes": getattr(order, "courier_notes", None),
+        "driver_comment": getattr(order, "courier_notes", None),
         "region_id": getattr(order, "region_id", None),
         "region": getattr(order, "region_id", None),
-        "full_address": order.address,
+        "full_address": getattr(order, "address", None),
         "primary_product": order.product_slug,
         "primary_qty": order.tier_qty,
         "bundle_enabled": bool(getattr(order, "bundle_enabled", False) or order.cross_sell_slug),
@@ -102,11 +115,11 @@ def _serialize_order(order: Order) -> dict:
         "total_price": cents_to_mad(order.total_cents),
         "customer_name": order.full_name,
         "source": getattr(order, "source", None),
-        "updated_at": order.updated_at.isoformat() if getattr(order, "updated_at", None) else None,
-        "confirmed_at": order.confirmed_at.isoformat() if getattr(order, "confirmed_at", None) else None,
-        "shipped_at": order.shipped_at.isoformat() if getattr(order, "shipped_at", None) else None,
-        "delivered_at": order.delivered_at.isoformat() if getattr(order, "delivered_at", None) else None,
-        "cancelled_at": order.cancelled_at.isoformat() if getattr(order, "cancelled_at", None) else None,
+        "updated_at": _iso(getattr(order, "updated_at", None)),
+        "confirmed_at": _iso(getattr(order, "confirmed_at", None)),
+        "shipped_at": _iso(getattr(order, "shipped_at", None)),
+        "delivered_at": _iso(getattr(order, "delivered_at", None)),
+        "cancelled_at": _iso(getattr(order, "cancelled_at", None)),
     }
 
 
@@ -371,6 +384,101 @@ def admin_orders(
     }
 
 
+@router.post("/orders", status_code=201)
+def admin_create_order(
+    payload: dict[str, Any] | None = Body(default=None),
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    body = payload if isinstance(payload, dict) else {}
+    name = str(body.get("full_name") or "").strip()[:120]
+    if len(name) < 3:
+        raise HTTPException(status_code=422, detail="invalid_name")
+    try:
+        from app.services.phone import normalize_ma_phone, to_national
+
+        e164 = normalize_ma_phone(str(body.get("phone") or ""))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="invalid_ma_phone") from exc
+    if not e164:
+        raise HTTPException(status_code=422, detail="invalid_ma_phone")
+    city = str(body.get("city") or "").strip()[:80]
+    if len(city) < 2:
+        raise HTTPException(status_code=422, detail="invalid_city")
+    try:
+        from app.services.cities import find_city
+
+        hit = find_city(city)
+        if hit and hit.get("ar"):
+            city = str(hit["ar"])[:80]
+    except Exception:
+        pass
+    status_value = str(body.get("status") or "confirmed")
+    if status_value not in ALLOWED_STATUSES:
+        raise HTTPException(status_code=422, detail="invalid_status")
+    qty = 2 if int(body.get("tier_qty") or 1) >= 2 else 1
+    try:
+        cents = int(round(float(body.get("total_mad") or 0) * 100))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="invalid_price") from exc
+    if cents < 100:
+        raise HTTPException(status_code=422, detail="invalid_price")
+    slug = str(body.get("product_slug") or "quran")
+    if slug not in ("quran", "kids", "music", "educative"):
+        slug = "quran"
+    order_id = uuid4()
+    now = datetime.now(timezone.utc)
+    order = Order(
+        id=order_id,
+        full_name=name,
+        phone=e164,
+        phone_national=to_national(e164),
+        city=city,
+        product_slug=slug,
+        tier_qty=qty,
+        tier_price_cents=cents,
+        subtotal_cents=cents,
+        total_cents=cents,
+        status=status_value,
+        event_id=f"admin-{order_id}",
+        source="admin",
+        updated_at=now,
+    )
+    _stamp_status(order, status_value, _order_column_names(session))
+    try:
+        session.add(order)
+        session.commit()
+        session.refresh(order)
+        return _serialize_order(order)
+    except Exception:
+        session.rollback()
+        session.execute(
+            text(
+                """
+                INSERT INTO orders (id, full_name, phone, city, product_slug, tier_qty, total_cents, status, event_id)
+                VALUES (:id, :full_name, :phone, :city, :product_slug, :tier_qty, :total_cents, :status, :event_id)
+                """
+            ),
+            {
+                "id": str(order_id),
+                "full_name": name,
+                "phone": e164,
+                "city": city,
+                "product_slug": slug,
+                "tier_qty": qty,
+                "total_cents": cents,
+                "status": status_value,
+                "event_id": f"admin-{order_id}",
+            },
+        )
+        session.commit()
+        created = _load_order(session, str(order_id))
+        if not created:
+            raise HTTPException(status_code=500, detail="create_failed")
+        return _serialize_order(created)
+
+
 @router.patch("/orders/{order_id}")
 def admin_update_order(
     order_id: str,
@@ -384,6 +492,34 @@ def admin_update_order(
     if not order:
         raise HTTPException(status_code=404, detail="order_not_found")
     cols = _order_column_names(session)
+    defined = {key: value for key, value in body.items() if value is not None}
+    status_only = set(defined) <= {"status"} and "status" in defined
+    if status_only:
+        status_value = str(defined["status"])
+        if status_value not in ALLOWED_STATUSES:
+            raise HTTPException(status_code=422, detail="invalid_status")
+        try:
+            _assign(order, cols, "status", status_value)
+            _stamp_status(order, status_value, cols)
+            _assign(order, cols, "updated_at", datetime.now(timezone.utc))
+            session.add(order)
+            session.commit()
+            session.refresh(order)
+            return _serialize_order(order)
+        except HTTPException:
+            session.rollback()
+            raise
+        except Exception:
+            session.rollback()
+            session.execute(
+                text("UPDATE orders SET status = :status WHERE id = :id"),
+                {"status": status_value, "id": str(order.id)},
+            )
+            session.commit()
+            order = _load_order(session, str(order.id))
+            if not order:
+                raise HTTPException(status_code=404, detail="order_not_found")
+            return _serialize_order(order)
     try:
         apply_order_update(order, body, cols)
         session.add(order)
