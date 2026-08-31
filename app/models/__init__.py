@@ -29,13 +29,16 @@ class Order(SQLModel, table=True):
     phone: str = Field(max_length=20, index=True)
     phone_national: str = Field(max_length=20, default="")
     city: str = Field(max_length=80)
-    address: str | None = Field(default=None, max_length=500)
+    address: str | None = Field(default=None)
     quartier: str | None = Field(default=None, max_length=120)
     street: str | None = Field(default=None, max_length=160)
     building: str | None = Field(default=None, max_length=80)
     landmark: str | None = Field(default=None, max_length=160)
     delivery_window: str | None = Field(default=None, max_length=32)
     courier_notes: str | None = Field(default=None)
+    region_id: str | None = Field(default=None, max_length=8)
+    bundle_enabled: bool = False
+    secondary_qty: int = 1
     product_slug: str = Field(max_length=64)
     tier_qty: int
     tier_price_cents: int

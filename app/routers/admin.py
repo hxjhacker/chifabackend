@@ -36,6 +36,7 @@ PACK_NAMES = {
     "kids": "USB تعليم الأطفال",
     "music": "USB الأغاني والموسيقى",
     "educative": "الفلاشة التعليمية الذكية",
+    "extra": "مفتاح إضافي بسعر العرض",
 }
 
 
@@ -88,6 +89,16 @@ def _serialize_order(order: Order) -> dict:
         "landmark": order.landmark,
         "delivery_window": order.delivery_window,
         "courier_notes": order.courier_notes,
+        "driver_comment": order.courier_notes,
+        "region_id": getattr(order, "region_id", None),
+        "region": getattr(order, "region_id", None),
+        "full_address": order.address,
+        "primary_product": order.product_slug,
+        "primary_qty": order.tier_qty,
+        "bundle_enabled": bool(getattr(order, "bundle_enabled", False) or order.cross_sell_slug),
+        "secondary_product": order.cross_sell_slug,
+        "secondary_qty": int(getattr(order, "secondary_qty", 1) or 1),
+        "total_price": cents_to_mad(order.total_cents),
     }
 
 
@@ -232,6 +243,23 @@ def admin_update_order(
         raise HTTPException(status_code=404, detail="order_not_found")
 
     data = payload.model_dump(exclude_unset=True)
+    if "full_address" in data and "address" not in data:
+        data["address"] = data["full_address"]
+    if "region" in data and "region_id" not in data:
+        data["region_id"] = data["region"]
+    if "primary_product" in data and "product_slug" not in data:
+        data["product_slug"] = data["primary_product"]
+    if "primary_qty" in data and "tier_qty" not in data:
+        data["tier_qty"] = data["primary_qty"]
+    if "total_price" in data and "total_mad" not in data:
+        data["total_mad"] = data["total_price"]
+    if "driver_comment" in data and "courier_notes" not in data:
+        data["courier_notes"] = data["driver_comment"]
+    if "secondary_product" in data and "cross_sell_slug" not in data:
+        data["cross_sell_slug"] = data["secondary_product"]
+    if data.get("bundle_enabled") is False:
+        data["cross_sell_slug"] = None
+
     if "status" in data:
         if data["status"] not in ALLOWED_STATUSES:
             raise HTTPException(status_code=422, detail="invalid_status")
@@ -255,8 +283,26 @@ def admin_update_order(
         if field in data:
             value = (data[field] or "").strip() or None
             setattr(order, field, value)
-    bits = [order.quartier, order.street, order.building, order.landmark, order.city]
-    order.address = "، ".join(bit for bit in bits if bit) or order.address
+    if "address" in data:
+        order.address = (data["address"] or "").strip() or None
+    else:
+        bits = [order.quartier, order.street, order.building, order.landmark, order.city]
+        order.address = "، ".join(bit for bit in bits if bit) or order.address
+    if "region_id" in data:
+        value = (data["region_id"] or "").strip().upper() or None
+        order.region_id = value
+    if "bundle_enabled" in data:
+        order.bundle_enabled = bool(data["bundle_enabled"])
+    if "secondary_qty" in data and data["secondary_qty"]:
+        order.secondary_qty = int(data["secondary_qty"])
+    if "cross_sell_slug" in data:
+        order.cross_sell_slug = data["cross_sell_slug"] or None
+        if not order.cross_sell_slug:
+            order.bundle_enabled = False
+        else:
+            order.bundle_enabled = True
+    if "cross_sell_price_mad" in data and data["cross_sell_price_mad"] is not None:
+        order.cross_sell_price_cents = int(round(float(data["cross_sell_price_mad"]) * 100))
     order.updated_at = datetime.now(timezone.utc)
     session.add(order)
     session.commit()

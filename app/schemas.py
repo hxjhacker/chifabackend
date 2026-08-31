@@ -45,18 +45,54 @@ class AdminOrderPatch(BaseModel):
     phone: str | None = None
     city: str | None = None
     product_slug: str | None = None
-    tier_qty: int | None = Field(default=None, ge=1, le=3)
+    primary_product: str | None = None
+    tier_qty: int | None = Field(default=None, ge=1, le=20)
+    primary_qty: int | None = Field(default=None, ge=1, le=20)
     total_mad: float | None = Field(default=None, ge=1)
+    total_price: float | None = Field(default=None, ge=1)
     quartier: str | None = Field(default=None, max_length=120)
     street: str | None = Field(default=None, max_length=160)
     building: str | None = Field(default=None, max_length=80)
     landmark: str | None = Field(default=None, max_length=160)
     delivery_window: str | None = None
     courier_notes: str | None = None
+    driver_comment: str | None = None
+    address: str | None = None
+    full_address: str | None = None
+    region_id: str | None = None
+    region: str | None = None
+    cross_sell_slug: str | None = None
+    secondary_product: str | None = None
+    cross_sell_price_mad: float | None = None
+    bundle_enabled: bool | None = None
+    secondary_qty: int | None = Field(default=None, ge=1, le=20)
+
+
+class OrderUpdate(AdminOrderPatch):
+    pass
+
+
+class OrderResponse(BaseModel):
+    order_id: str
+    full_name: str
+    city: str
+    phone: str
+    status: str
+    full_address: str | None = None
+    region: str | None = None
+    primary_product: str | None = None
+    primary_qty: int | None = 1
+    bundle_enabled: bool | None = False
+    secondary_product: str | None = None
+    secondary_qty: int | None = 1
+    driver_comment: str | None = None
+    total_price: float | None = None
 
 
 OrderCreate = OrderCreate
 UpsellCreate = UpsellCreate
 TrackingIn = TrackingIn
 AdminOrderPatch = AdminOrderPatch
+OrderUpdate = OrderUpdate
+OrderResponse = OrderResponse
 
