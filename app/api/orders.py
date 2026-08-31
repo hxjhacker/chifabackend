@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from app.db import get_session
 from app.dependencies import get_current_admin
 from app.models import Order, OrderItem, Product
-from app.schemas import OrderCreate, OrderUpdate, UpsellCreate
+from app.schemas import OrderCreate, UpsellCreate
 from app.services.capi import send_purchase
 from app.services.cities import find_city
 from app.services.fraud import ip_is_blocked
@@ -209,11 +209,11 @@ def get_order(order_id: UUID, session: Session = Depends(get_session)):
 
 @router.patch("/orders/{order_id}")
 def update_order(
-    order_id: UUID,
-    payload: OrderUpdate,
+    order_id: str,
+    payload: dict | None = Body(default=None),
     admin: dict = Depends(get_current_admin),
     session: Session = Depends(get_session),
 ):
     from app.routers.admin import admin_update_order
 
-    return admin_update_order(order_id, payload, admin, session)
+    return admin_update_order(order_id, payload if isinstance(payload, dict) else {}, admin, session)

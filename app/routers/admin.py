@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect, or_, text
@@ -148,9 +148,28 @@ def _assign(order: Order, cols: set[str], name: str, value: object) -> None:
     setattr(order, name, value)
 
 
-def apply_order_update(order: Order, payload: OrderUpdate, cols: set[str] | None = None) -> Order:
+def _load_order(session: Session, order_id: str) -> Order | None:
+    raw = (order_id or "").strip()
+    if not raw:
+        return None
+    try:
+        return session.get(Order, UUID(raw))
+    except Exception:
+        try:
+            return session.get(Order, raw)
+        except Exception:
+            return None
+
+
+def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols: set[str] | None = None) -> Order:
     known = cols if cols is not None else set()
-    data = payload.model_dump(exclude_unset=True)
+    if isinstance(payload, OrderUpdate):
+        data = payload.model_dump(exclude_unset=True)
+    else:
+        try:
+            data = OrderUpdate.model_validate(payload or {}).model_dump(exclude_unset=True)
+        except Exception:
+            data = dict(payload or {})
     if "customer_name" in data and "full_name" not in data:
         data["full_name"] = data["customer_name"]
     if "full_address" in data and "address" not in data:
@@ -354,18 +373,19 @@ def admin_orders(
 
 @router.patch("/orders/{order_id}")
 def admin_update_order(
-    order_id: UUID,
-    payload: OrderUpdate,
+    order_id: str,
+    payload: dict[str, Any] | None = Body(default=None),
     admin: dict = Depends(get_current_admin),
     session: Session = Depends(get_session),
 ):
     _ = admin
-    order = session.get(Order, order_id)
+    body = payload if isinstance(payload, dict) else {}
+    order = _load_order(session, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="order_not_found")
     cols = _order_column_names(session)
     try:
-        apply_order_update(order, payload, cols)
+        apply_order_update(order, body, cols)
         session.add(order)
         session.commit()
         session.refresh(order)
@@ -375,12 +395,12 @@ def admin_update_order(
         raise
     except Exception:
         session.rollback()
-        data = payload.model_dump(exclude_unset=True)
-        name = str(data.get("full_name") or data.get("customer_name") or order.full_name or "").strip()[:160]
+        data = body
+        name = str(data.get("full_name") or data.get("customer_name") or data.get("fullName") or order.full_name or "").strip()[:160]
         city = str(data.get("city") or order.city or "").strip()[:120]
-        slug = str(data.get("product_slug") or data.get("primary_product") or order.product_slug)
-        qty = int(data.get("tier_qty") or data.get("primary_qty") or order.tier_qty or 1)
-        total = data.get("total_mad") if data.get("total_mad") is not None else data.get("total_price")
+        slug = str(data.get("product_slug") or data.get("primary_product") or data.get("productSlug") or order.product_slug)
+        qty = int(data.get("tier_qty") or data.get("primary_qty") or data.get("tierQty") or order.tier_qty or 1)
+        total = data.get("total_mad") if data.get("total_mad") is not None else data.get("total_price") or data.get("totalMad") or data.get("totalPrice")
         cents = int(round(float(total) * 100)) if total is not None else order.total_cents
         status_value = str(data.get("status") or order.status)
         try:
@@ -399,7 +419,7 @@ def admin_update_order(
                     """
                 ),
                 {
-                    "id": str(order_id),
+                    "id": str(order.id),
                     "full_name": name or order.full_name,
                     "city": city or order.city,
                     "product_slug": slug,
@@ -412,7 +432,7 @@ def admin_update_order(
         except Exception as exc:
             session.rollback()
             raise HTTPException(status_code=500, detail="update_failed") from exc
-        order = session.get(Order, order_id)
+        order = _load_order(session, str(order.id))
         if not order:
             raise HTTPException(status_code=404, detail="order_not_found")
         return _serialize_order(order)
