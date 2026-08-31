@@ -5,7 +5,7 @@ class OrderCreate(BaseModel):
     full_name: str = Field(min_length=3, max_length=80)
     phone: str = Field(min_length=9, max_length=20)
     city: str = Field(min_length=2, max_length=80)
-    address: str | None = Field(default=None, max_length=240)
+    address: str | None = Field(default=None, max_length=500)
     product_slug: str
     tier_qty: int = Field(ge=1, le=3)
     cross_sell_slug: str | None = None
@@ -39,6 +39,24 @@ class TrackingIn(BaseModel):
     sccid: str | None = None
 
 
+class AdminOrderPatch(BaseModel):
+    status: str | None = None
+    full_name: str | None = Field(default=None, min_length=3, max_length=120)
+    phone: str | None = None
+    city: str | None = None
+    product_slug: str | None = None
+    tier_qty: int | None = Field(default=None, ge=1, le=3)
+    total_mad: float | None = Field(default=None, ge=1)
+    quartier: str | None = Field(default=None, max_length=120)
+    street: str | None = Field(default=None, max_length=160)
+    building: str | None = Field(default=None, max_length=80)
+    landmark: str | None = Field(default=None, max_length=160)
+    delivery_window: str | None = None
+    courier_notes: str | None = None
+
+
 OrderCreate = OrderCreate
 UpsellCreate = UpsellCreate
 TrackingIn = TrackingIn
+AdminOrderPatch = AdminOrderPatch
+

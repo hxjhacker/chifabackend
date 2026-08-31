@@ -21,6 +21,7 @@ from app.security import (
     create_access_token,
     verify_credentials,
 )
+from app.schemas import AdminOrderPatch
 from app.services.pricing import cents_to_mad
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -41,10 +42,6 @@ PACK_NAMES = {
 class AdminLoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=200)
-
-
-class StatusPatch(BaseModel):
-    status: AdminStatus
 
 
 def _display_status(raw: str) -> str:
@@ -84,6 +81,13 @@ def _serialize_order(order: Order) -> dict:
         "currency": order.currency,
         "status": _display_status(order.status),
         "raw_status": order.status,
+        "address": order.address,
+        "quartier": order.quartier,
+        "street": order.street,
+        "building": order.building,
+        "landmark": order.landmark,
+        "delivery_window": order.delivery_window,
+        "courier_notes": order.courier_notes,
     }
 
 
@@ -194,6 +198,7 @@ def admin_orders(
                 Order.full_name.ilike(like),
                 Order.phone.ilike(like),
                 Order.phone_national.ilike(like),
+                Order.city.ilike(like),
             )
         )
     city_val = city.strip()
@@ -217,7 +222,7 @@ def admin_orders(
 @router.patch("/orders/{order_id}")
 def admin_update_order(
     order_id: UUID,
-    payload: StatusPatch,
+    payload: AdminOrderPatch,
     admin: dict = Depends(get_current_admin),
     session: Session = Depends(get_session),
 ):
@@ -225,7 +230,33 @@ def admin_update_order(
     order = session.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="order_not_found")
-    order.status = payload.status
+
+    data = payload.model_dump(exclude_unset=True)
+    if "status" in data:
+        if data["status"] not in ALLOWED_STATUSES:
+            raise HTTPException(status_code=422, detail="invalid_status")
+        order.status = data["status"]
+    if "full_name" in data and data["full_name"]:
+        order.full_name = data["full_name"].strip()
+    if "city" in data and data["city"]:
+        order.city = data["city"].strip()
+    if "product_slug" in data and data["product_slug"]:
+        order.product_slug = data["product_slug"]
+    if "tier_qty" in data and data["tier_qty"]:
+        order.tier_qty = data["tier_qty"]
+    if "total_mad" in data and data["total_mad"] is not None:
+        cents = int(round(float(data["total_mad"]) * 100))
+        if cents < 100:
+            raise HTTPException(status_code=422, detail="invalid_price")
+        order.total_cents = cents
+        order.subtotal_cents = cents
+        order.tier_price_cents = cents
+    for field in ("quartier", "street", "building", "landmark", "delivery_window", "courier_notes"):
+        if field in data:
+            value = (data[field] or "").strip() or None
+            setattr(order, field, value)
+    bits = [order.quartier, order.street, order.building, order.landmark, order.city]
+    order.address = "، ".join(bit for bit in bits if bit) or order.address
     order.updated_at = datetime.now(timezone.utc)
     session.add(order)
     session.commit()
