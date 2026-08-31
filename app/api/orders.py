@@ -5,8 +5,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from app.db import get_session
+from app.dependencies import get_current_admin
 from app.models import Order, OrderItem, Product
-from app.schemas import OrderCreate, UpsellCreate
+from app.schemas import OrderCreate, OrderUpdate, UpsellCreate
 from app.services.capi import send_purchase
 from app.services.cities import find_city
 from app.services.fraud import ip_is_blocked
@@ -204,3 +205,15 @@ def get_order(order_id: UUID, session: Session = Depends(get_session)):
     if not order:
         raise HTTPException(status_code=404, detail="order_not_found")
     return _serialize(order)
+
+
+@router.patch("/orders/{order_id}")
+def update_order(
+    order_id: UUID,
+    payload: OrderUpdate,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    from app.routers.admin import admin_update_order
+
+    return admin_update_order(order_id, payload, admin, session)

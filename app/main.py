@@ -11,7 +11,7 @@ from app.api.products import router as products_router
 from app.api.tracking import router as tracking_router
 from app.routers.admin import router as admin_router
 from app.config import settings
-from app.db import engine
+from app.db import engine, ensure_order_columns
 from app.models import Order, OrderItem, Product, TrackingEvent  # noqa: F401
 from app.seed import seed_products
 
@@ -19,6 +19,7 @@ from app.seed import seed_products
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     SQLModel.metadata.create_all(engine)
+    ensure_order_columns()
     with Session(engine) as session:
         seed_products(session)
     yield

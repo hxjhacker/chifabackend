@@ -62,6 +62,10 @@ class Order(SQLModel, table=True):
     source: str = Field(default="website", max_length=32)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+    confirmed_at: datetime | None = Field(default=None)
+    shipped_at: datetime | None = Field(default=None)
+    delivered_at: datetime | None = Field(default=None)
+    cancelled_at: datetime | None = Field(default=None)
 
     items: list["OrderItem"] = Relationship(back_populates="order")
 

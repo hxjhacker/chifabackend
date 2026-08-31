@@ -21,7 +21,7 @@ from app.security import (
     create_access_token,
     verify_credentials,
 )
-from app.schemas import AdminOrderPatch
+from app.schemas import OrderUpdate
 from app.services.pricing import cents_to_mad
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -30,6 +30,7 @@ AdminStatus = Literal["new", "confirmed", "shipped", "delivered", "cancelled"]
 
 NEW_EQUIV = ("pending", "upsell_accepted", "new")
 ALLOWED_STATUSES: tuple[str, ...] = ("new", "confirmed", "shipped", "delivered", "cancelled")
+REGION_IDS = tuple(f"MA{i:02d}" for i in range(1, 13))
 
 PACK_NAMES = {
     "quran": "USB القرآن الكريم",
@@ -99,7 +100,112 @@ def _serialize_order(order: Order) -> dict:
         "secondary_product": order.cross_sell_slug,
         "secondary_qty": int(getattr(order, "secondary_qty", 1) or 1),
         "total_price": cents_to_mad(order.total_cents),
+        "customer_name": order.full_name,
+        "source": getattr(order, "source", None),
+        "updated_at": order.updated_at.isoformat() if getattr(order, "updated_at", None) else None,
+        "confirmed_at": order.confirmed_at.isoformat() if getattr(order, "confirmed_at", None) else None,
+        "shipped_at": order.shipped_at.isoformat() if getattr(order, "shipped_at", None) else None,
+        "delivered_at": order.delivered_at.isoformat() if getattr(order, "delivered_at", None) else None,
+        "cancelled_at": order.cancelled_at.isoformat() if getattr(order, "cancelled_at", None) else None,
     }
+
+
+def _resolve_region(value: str | None) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    upper = raw.upper()
+    if upper in REGION_IDS:
+        return upper
+    if len(raw) <= 8:
+        return upper
+    return None
+
+
+def _stamp_status(order: Order, status_value: str) -> None:
+    now = datetime.now(timezone.utc)
+    if status_value in ("confirmed", "shipped", "delivered") and not order.confirmed_at:
+        order.confirmed_at = now
+    if status_value in ("shipped", "delivered") and not order.shipped_at:
+        order.shipped_at = now
+    if status_value == "delivered" and not order.delivered_at:
+        order.delivered_at = now
+    if status_value == "cancelled" and not order.cancelled_at:
+        order.cancelled_at = now
+
+
+def apply_order_update(order: Order, payload: OrderUpdate) -> Order:
+    data = payload.model_dump(exclude_unset=True)
+    if "customer_name" in data and "full_name" not in data:
+        data["full_name"] = data["customer_name"]
+    if "full_address" in data and "address" not in data:
+        data["address"] = data["full_address"]
+    if "region" in data and "region_id" not in data:
+        data["region_id"] = data["region"]
+    if "primary_product" in data and "product_slug" not in data:
+        data["product_slug"] = data["primary_product"]
+    if "primary_qty" in data and "tier_qty" not in data:
+        data["tier_qty"] = data["primary_qty"]
+    if "total_price" in data and "total_mad" not in data:
+        data["total_mad"] = data["total_price"]
+    if "driver_comment" in data and "courier_notes" not in data:
+        data["courier_notes"] = data["driver_comment"]
+    if "secondary_product" in data and "cross_sell_slug" not in data:
+        data["cross_sell_slug"] = data["secondary_product"]
+    if data.get("bundle_enabled") is False:
+        data["cross_sell_slug"] = None
+
+    if "status" in data and data["status"]:
+        if data["status"] not in ALLOWED_STATUSES:
+            raise HTTPException(status_code=422, detail="invalid_status")
+        order.status = data["status"]
+        _stamp_status(order, data["status"])
+    if "full_name" in data and data["full_name"]:
+        name = str(data["full_name"]).strip()
+        if len(name) < 3:
+            raise HTTPException(status_code=422, detail="invalid_name")
+        order.full_name = name
+    if "city" in data and data["city"]:
+        order.city = str(data["city"]).strip()
+    if "product_slug" in data and data["product_slug"]:
+        order.product_slug = str(data["product_slug"])
+    if "tier_qty" in data and data["tier_qty"]:
+        qty = int(data["tier_qty"])
+        if qty < 1 or qty > 20:
+            raise HTTPException(status_code=422, detail="invalid_qty")
+        order.tier_qty = qty
+    if "total_mad" in data and data["total_mad"] is not None:
+        cents = int(round(float(data["total_mad"]) * 100))
+        if cents < 100:
+            raise HTTPException(status_code=422, detail="invalid_price")
+        order.total_cents = cents
+        order.subtotal_cents = cents
+        order.tier_price_cents = cents
+    for field in ("quartier", "street", "building", "landmark", "delivery_window", "courier_notes"):
+        if field in data:
+            value = (data[field] or "").strip() or None
+            setattr(order, field, value)
+    if "address" in data:
+        order.address = (str(data["address"]) if data["address"] is not None else "").strip() or None
+    if "region_id" in data:
+        order.region_id = _resolve_region(str(data["region_id"]) if data["region_id"] is not None else None)
+    if "bundle_enabled" in data:
+        order.bundle_enabled = bool(data["bundle_enabled"])
+    if "secondary_qty" in data and data["secondary_qty"]:
+        qty = int(data["secondary_qty"])
+        if qty < 1 or qty > 20:
+            raise HTTPException(status_code=422, detail="invalid_qty")
+        order.secondary_qty = qty
+    if "cross_sell_slug" in data:
+        order.cross_sell_slug = data["cross_sell_slug"] or None
+        if not order.cross_sell_slug:
+            order.bundle_enabled = False
+        else:
+            order.bundle_enabled = True
+    if "cross_sell_price_mad" in data and data["cross_sell_price_mad"] is not None:
+        order.cross_sell_price_cents = int(round(float(data["cross_sell_price_mad"]) * 100))
+    order.updated_at = datetime.now(timezone.utc)
+    return order
 
 
 def _status_filter(value: str):
@@ -233,7 +339,7 @@ def admin_orders(
 @router.patch("/orders/{order_id}")
 def admin_update_order(
     order_id: UUID,
-    payload: AdminOrderPatch,
+    payload: OrderUpdate,
     admin: dict = Depends(get_current_admin),
     session: Session = Depends(get_session),
 ):
@@ -241,69 +347,7 @@ def admin_update_order(
     order = session.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="order_not_found")
-
-    data = payload.model_dump(exclude_unset=True)
-    if "full_address" in data and "address" not in data:
-        data["address"] = data["full_address"]
-    if "region" in data and "region_id" not in data:
-        data["region_id"] = data["region"]
-    if "primary_product" in data and "product_slug" not in data:
-        data["product_slug"] = data["primary_product"]
-    if "primary_qty" in data and "tier_qty" not in data:
-        data["tier_qty"] = data["primary_qty"]
-    if "total_price" in data and "total_mad" not in data:
-        data["total_mad"] = data["total_price"]
-    if "driver_comment" in data and "courier_notes" not in data:
-        data["courier_notes"] = data["driver_comment"]
-    if "secondary_product" in data and "cross_sell_slug" not in data:
-        data["cross_sell_slug"] = data["secondary_product"]
-    if data.get("bundle_enabled") is False:
-        data["cross_sell_slug"] = None
-
-    if "status" in data:
-        if data["status"] not in ALLOWED_STATUSES:
-            raise HTTPException(status_code=422, detail="invalid_status")
-        order.status = data["status"]
-    if "full_name" in data and data["full_name"]:
-        order.full_name = data["full_name"].strip()
-    if "city" in data and data["city"]:
-        order.city = data["city"].strip()
-    if "product_slug" in data and data["product_slug"]:
-        order.product_slug = data["product_slug"]
-    if "tier_qty" in data and data["tier_qty"]:
-        order.tier_qty = data["tier_qty"]
-    if "total_mad" in data and data["total_mad"] is not None:
-        cents = int(round(float(data["total_mad"]) * 100))
-        if cents < 100:
-            raise HTTPException(status_code=422, detail="invalid_price")
-        order.total_cents = cents
-        order.subtotal_cents = cents
-        order.tier_price_cents = cents
-    for field in ("quartier", "street", "building", "landmark", "delivery_window", "courier_notes"):
-        if field in data:
-            value = (data[field] or "").strip() or None
-            setattr(order, field, value)
-    if "address" in data:
-        order.address = (data["address"] or "").strip() or None
-    else:
-        bits = [order.quartier, order.street, order.building, order.landmark, order.city]
-        order.address = "، ".join(bit for bit in bits if bit) or order.address
-    if "region_id" in data:
-        value = (data["region_id"] or "").strip().upper() or None
-        order.region_id = value
-    if "bundle_enabled" in data:
-        order.bundle_enabled = bool(data["bundle_enabled"])
-    if "secondary_qty" in data and data["secondary_qty"]:
-        order.secondary_qty = int(data["secondary_qty"])
-    if "cross_sell_slug" in data:
-        order.cross_sell_slug = data["cross_sell_slug"] or None
-        if not order.cross_sell_slug:
-            order.bundle_enabled = False
-        else:
-            order.bundle_enabled = True
-    if "cross_sell_price_mad" in data and data["cross_sell_price_mad"] is not None:
-        order.cross_sell_price_cents = int(round(float(data["cross_sell_price_mad"]) * 100))
-    order.updated_at = datetime.now(timezone.utc)
+    apply_order_update(order, payload)
     session.add(order)
     session.commit()
     session.refresh(order)
