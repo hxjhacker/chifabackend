@@ -35,7 +35,7 @@ STATUS_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "confirmed": ("shipped", "cancelled"),
     "shipped": ("delivered", "cancelled"),
     "delivered": (),
-    "cancelled": (),
+    "cancelled": ("new", "confirmed"),
 }
 REGION_IDS = tuple(f"MA{i:02d}" for i in range(1, 13))
 
@@ -178,14 +178,28 @@ def _resolve_region(value: str | None) -> str | None:
 def _stamp_status(order: Order, status_value: str, cols: set[str] | None = None) -> None:
     now = datetime.now(timezone.utc)
     known = cols if cols is not None else set()
+    if status_value == "new":
+        _assign(order, known, "confirmed_at", None)
+        _assign(order, known, "shipped_at", None)
+        _assign(order, known, "delivered_at", None)
+        _assign(order, known, "cancelled_at", None)
+        return
     if status_value in ("confirmed", "shipped", "delivered") and not order.confirmed_at:
         _assign(order, known, "confirmed_at", now)
     if status_value in ("shipped", "delivered") and not order.shipped_at:
         _assign(order, known, "shipped_at", now)
     if status_value == "delivered" and not order.delivered_at:
         _assign(order, known, "delivered_at", now)
-    if status_value == "cancelled" and not order.cancelled_at:
-        _assign(order, known, "cancelled_at", now)
+    if status_value == "cancelled":
+        if not order.cancelled_at:
+            _assign(order, known, "cancelled_at", now)
+        return
+    _assign(order, known, "cancelled_at", None)
+    if status_value == "confirmed":
+        _assign(order, known, "shipped_at", None)
+        _assign(order, known, "delivered_at", None)
+    elif status_value == "shipped":
+        _assign(order, known, "delivered_at", None)
 
 
 def _order_column_names(session: Session) -> set[str]:
@@ -465,7 +479,7 @@ def admin_create_order(
     status_value = str(body.get("status") or "confirmed")
     if status_value not in ALLOWED_STATUSES:
         raise HTTPException(status_code=422, detail="invalid_status")
-    qty = 2 if int(body.get("tier_qty") or 1) >= 2 else 1
+    qty = max(1, min(20, int(body.get("tier_qty") or 1)))
     try:
         cents = int(round(float(body.get("total_mad") or 0) * 100))
     except (TypeError, ValueError) as exc:
@@ -475,6 +489,14 @@ def admin_create_order(
     slug = str(body.get("product_slug") or "quran")
     if slug not in ("quran", "kids", "music", "educative"):
         slug = "quran"
+    allowed_cross = ("quran", "kids", "music", "educative", "extra")
+    cross = str(body.get("cross_sell_slug") or body.get("secondary_product") or "").strip() or None
+    if cross not in allowed_cross:
+        cross = None
+    bundle = bool(body.get("bundle_enabled")) and bool(cross)
+    secondary_qty = max(1, min(20, int(body.get("secondary_qty") or 1)))
+    address = str(body.get("address") or body.get("full_address") or "").strip() or None
+    notes = str(body.get("courier_notes") or body.get("driver_comment") or "").strip() or None
     order_id = uuid4()
     now = datetime.now(timezone.utc)
     order = Order(
@@ -492,6 +514,16 @@ def admin_create_order(
         event_id=f"admin-{order_id}",
         source="admin",
         updated_at=now,
+        address=address,
+        quartier=str(body.get("quartier") or "").strip() or None,
+        street=str(body.get("street") or "").strip() or None,
+        building=str(body.get("building") or "").strip() or None,
+        landmark=str(body.get("landmark") or "").strip() or None,
+        courier_notes=notes,
+        region_id=_resolve_region(str(body.get("region_id") or body.get("region") or "") or None),
+        cross_sell_slug=cross if bundle else None,
+        bundle_enabled=bundle,
+        secondary_qty=secondary_qty if bundle else 1,
     )
     _stamp_status(order, status_value, _order_column_names(session))
     try:
