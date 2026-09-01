@@ -30,6 +30,13 @@ AdminStatus = Literal["new", "confirmed", "shipped", "delivered", "cancelled"]
 
 NEW_EQUIV = ("pending", "upsell_accepted", "new")
 ALLOWED_STATUSES: tuple[str, ...] = ("new", "confirmed", "shipped", "delivered", "cancelled")
+STATUS_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    "new": ("confirmed", "cancelled"),
+    "confirmed": ("shipped", "cancelled"),
+    "shipped": ("delivered", "cancelled"),
+    "delivered": (),
+    "cancelled": (),
+}
 REGION_IDS = tuple(f"MA{i:02d}" for i in range(1, 13))
 
 PACK_NAMES = {
@@ -52,6 +59,39 @@ def _display_status(raw: str) -> str:
     if raw in ALLOWED_STATUSES:
         return raw
     return "new"
+
+
+def _assert_status_transition(current_raw: str, next_status: str) -> None:
+    current = _display_status(current_raw or "new")
+    nxt = _display_status(next_status or "")
+    if current == nxt:
+        return
+    if nxt not in STATUS_TRANSITIONS.get(current, ()):
+        raise HTTPException(status_code=422, detail="invalid_status_transition")
+
+
+def _composed_address(order: Order) -> str:
+    stored = str(getattr(order, "address", None) or getattr(order, "full_address", None) or "").strip()
+    if stored:
+        return stored
+    bits = [
+        str(getattr(order, field, None) or "").strip()
+        for field in ("quartier", "street", "building", "landmark")
+    ]
+    return "، ".join(part for part in bits if part)
+
+
+def _has_complete_confirm_details(order: Order) -> bool:
+    name = str(getattr(order, "full_name", "") or "").strip()
+    city = str(getattr(order, "city", "") or "").strip()
+    phone = str(getattr(order, "phone", "") or getattr(order, "phone_national", "") or "").strip()
+    address = _composed_address(order)
+    if len(name) < 3 or len(city) < 2 or not phone or len(address) < 8:
+        return False
+    rest = address.replace(city, " ")
+    for ch in "،,.- \t":
+        rest = rest.replace(ch, "")
+    return len(rest) >= 5
 
 
 def _pack_label(order: Order) -> str:
@@ -202,9 +242,11 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
     if data.get("bundle_enabled") is False:
         data["cross_sell_slug"] = None
 
+    current_status = _display_status(str(order.status or "new"))
     if "status" in data and data["status"]:
         if data["status"] not in ALLOWED_STATUSES:
             raise HTTPException(status_code=422, detail="invalid_status")
+        _assert_status_transition(current_status, str(data["status"]))
         _assign(order, known, "status", data["status"])
         _stamp_status(order, data["status"], known)
     if "full_name" in data and data["full_name"]:
@@ -253,6 +295,9 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
     if "cross_sell_price_mad" in data and data["cross_sell_price_mad"] is not None:
         _assign(order, known, "cross_sell_price_cents", int(round(float(data["cross_sell_price_mad"]) * 100)))
     _assign(order, known, "updated_at", datetime.now(timezone.utc))
+    next_status = _display_status(str(getattr(order, "status", current_status) or current_status))
+    if next_status == "confirmed" and current_status != "confirmed" and not _has_complete_confirm_details(order):
+        raise HTTPException(status_code=422, detail="confirmation_details_required")
     return order
 
 
@@ -501,6 +546,10 @@ def admin_update_order(
         status_value = str(defined["status"])
         if status_value not in ALLOWED_STATUSES:
             raise HTTPException(status_code=422, detail="invalid_status")
+        _assert_status_transition(str(order.status or "new"), status_value)
+        if _display_status(status_value) == "confirmed" and _display_status(str(order.status or "")) != "confirmed":
+            if not _has_complete_confirm_details(order):
+                raise HTTPException(status_code=422, detail="confirmation_details_required")
         try:
             _assign(order, cols, "status", status_value)
             _stamp_status(order, status_value, cols)
@@ -542,6 +591,8 @@ def admin_update_order(
         total = data.get("total_mad") if data.get("total_mad") is not None else data.get("total_price") or data.get("totalMad") or data.get("totalPrice")
         cents = int(round(float(total) * 100)) if total is not None else order.total_cents
         status_value = str(data.get("status") or order.status)
+        if data.get("status"):
+            _assert_status_transition(str(order.status or "new"), status_value)
         try:
             session.execute(
                 text(
