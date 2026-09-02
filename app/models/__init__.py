@@ -108,3 +108,14 @@ class PageView(SQLModel, table=True):
 
 TrackingEvent = TrackingEvent
 PageView = PageView
+
+
+class PushSubscription(SQLModel, table=True):
+    __tablename__ = "push_subscriptions"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    endpoint: str = Field(unique=True)
+    p256dh: str
+    auth: str
+    user_agent: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow)

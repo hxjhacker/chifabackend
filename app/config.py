@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     admin_jwt_secret: str = "204a308d75e24d90b8e47391e1cc9d33b2b08cce2dcd4482a2276542bd346504"
     admin_jwt_hours: int = 12
 
+    vapid_public_key: str = "BLIQF0U5W6Xd-DZjVgIqpNJoBlJo48KDeOn5DvMRQBWZY36qKbQeNYmAubek3DEgqmmC5ot2HuGN_m_jM7gmIbA"
+    vapid_private_key: str = "aoeWVCDnWXyAQB7YjEldsJXqdaNk8005Ks2PwckW8TI"
+    vapid_subject: str = "mailto:hello@chifaglow.com"
+
     @property
     def sqlalchemy_url(self) -> str:
         return _to_sqlalchemy(self.database_url)

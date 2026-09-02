@@ -20,6 +20,7 @@ from app.services.pricing import (
     cents_to_mad,
     compute_subtotal,
 )
+from app.services.push import notify_new_order
 from app.services.sheets import product_name_ar, push_order_to_sheets
 
 router = APIRouter(prefix="/api")
@@ -67,6 +68,30 @@ def _serialize(order: Order) -> dict:
 def _queue_side_effects(background: BackgroundTasks, order: Order, product_name: str) -> None:
     background.add_task(send_purchase, order, purchase_event_id(order.id))
     background.add_task(push_order_to_sheets, order, product_name)
+    background.add_task(
+        _notify_order,
+        str(order.full_name),
+        str(order.city),
+        str(order.product_slug),
+        int(order.tier_qty or 1),
+        cents_to_mad(order.total_cents),
+    )
+
+
+def _notify_order(full_name: str, city: str, product_slug: str, qty: int, total_mad: float) -> None:
+    from sqlmodel import Session
+
+    from app.db import engine
+
+    with Session(engine) as session:
+        notify_new_order(
+            session,
+            full_name=full_name,
+            city=city,
+            product_slug=product_slug,
+            qty=qty,
+            total_mad=total_mad,
+        )
 
 
 @router.post("/orders", status_code=201)

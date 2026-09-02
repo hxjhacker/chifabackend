@@ -47,6 +47,20 @@ PAGE_VIEWS_SQL = (
     "CREATE INDEX IF NOT EXISTS ix_page_views_slug_created ON page_views (product_slug, created_at)",
 )
 
+PUSH_SUBSCRIPTIONS_SQL = (
+    """
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id uuid PRIMARY KEY,
+      endpoint text NOT NULL UNIQUE,
+      p256dh text NOT NULL,
+      auth text NOT NULL,
+      user_agent text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_push_subscriptions_endpoint ON push_subscriptions (endpoint)",
+)
+
 
 def ensure_order_columns() -> None:
     with engine.begin() as conn:
@@ -56,6 +70,11 @@ def ensure_order_columns() -> None:
             except Exception:
                 continue
         for sql in PAGE_VIEWS_SQL:
+            try:
+                conn.execute(text(sql))
+            except Exception:
+                continue
+        for sql in PUSH_SUBSCRIPTIONS_SQL:
             try:
                 conn.execute(text(sql))
             except Exception:
