@@ -1,7 +1,10 @@
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
+from sqlmodel import Session
 
+from app.db import get_session
 from app.services.capi import CapiUser, dispatch_capi
+from app.services.page_views import record_page_view
 
 router = APIRouter(prefix="/api")
 
@@ -54,3 +57,18 @@ async def track_event(payload: TrackingIn, request: Request, background: Backgro
         content_ids=payload.content_ids,
     )
     return {"ok": True, "event_id": payload.event_id}
+
+
+class PageViewIn(BaseModel):
+    kind: str
+    product_slug: str | None = None
+    path: str | None = None
+
+
+@router.post("/tracking/page-views")
+def track_page_view(payload: PageViewIn, session: Session = Depends(get_session)):
+    kind = payload.kind if payload.kind in ("store", "product") else ""
+    if not kind:
+        return {"ok": False, "detail": "invalid_kind"}
+    saved = record_page_view(session, kind, payload.product_slug, payload.path)
+    return {"ok": saved}

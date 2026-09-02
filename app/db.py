@@ -33,10 +33,29 @@ ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at timestamptz",
 )
 
+PAGE_VIEWS_SQL = (
+    """
+    CREATE TABLE IF NOT EXISTS page_views (
+      id uuid PRIMARY KEY,
+      kind varchar(32) NOT NULL,
+      product_slug varchar(32),
+      path text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_page_views_created_at ON page_views (created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_page_views_slug_created ON page_views (product_slug, created_at)",
+)
+
 
 def ensure_order_columns() -> None:
     with engine.begin() as conn:
         for sql in ORDER_COLUMN_ALTERS:
+            try:
+                conn.execute(text(sql))
+            except Exception:
+                continue
+        for sql in PAGE_VIEWS_SQL:
             try:
                 conn.execute(text(sql))
             except Exception:

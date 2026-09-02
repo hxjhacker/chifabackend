@@ -12,7 +12,7 @@ from app.api.tracking import router as tracking_router
 from app.routers.admin import router as admin_router
 from app.config import settings
 from app.db import engine, ensure_order_columns
-from app.models import Order, OrderItem, Product, TrackingEvent  # noqa: F401
+from app.models import Order, OrderItem, Product, TrackingEvent, PageView  # noqa: F401
 from app.seed import seed_products
 
 

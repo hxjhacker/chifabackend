@@ -23,6 +23,7 @@ from app.security import (
 )
 from app.schemas import OrderUpdate
 from app.services.pricing import cents_to_mad
+from app.services.page_views import observatory_stats
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -401,6 +402,19 @@ def admin_stats(
         "confirmation_rate": rate,
         "total_orders": len(rows),
     }
+
+
+@router.get("/views")
+def admin_views(
+    range_name: str = Query("today", alias="range"),
+    date: str | None = Query(None),
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    allowed = {"today", "week", "month", "custom"}
+    resolved = range_name if range_name in allowed else "today"
+    return observatory_stats(session, resolved, date)
 
 
 @router.get("/orders")

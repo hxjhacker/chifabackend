@@ -96,4 +96,15 @@ class TrackingEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class PageView(SQLModel, table=True):
+    __tablename__ = "page_views"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    kind: str = Field(max_length=32)
+    product_slug: str | None = Field(default=None, max_length=32, index=True)
+    path: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 TrackingEvent = TrackingEvent
+PageView = PageView
