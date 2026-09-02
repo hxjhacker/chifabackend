@@ -14,6 +14,11 @@ from app.services.phone import phone_digits_for_hash
 from app.services.pricing import cents_to_mad
 
 
+def purchase_event_id(order_id: Any, kind: str = "order") -> str:
+    suffix = "_upsell" if kind == "upsell" else ""
+    return f"purchase_{order_id}{suffix}"
+
+
 @dataclass
 class CapiUser:
     phone_e164: str | None = None
@@ -79,8 +84,17 @@ def order_contents(order: Order) -> tuple[list[str], list[dict[str, Any]], float
     return ids, contents, cents_to_mad(order.total_cents)
 
 
-async def send_purchase(order: Order, event_id: str) -> None:
-    ids, contents, value = order_contents(order)
+async def send_purchase(order: Order, event_id: str, upsell_only: bool = False) -> None:
+    if upsell_only and order.upsell_slug:
+        ids = [order.upsell_slug]
+        contents = [{"id": order.upsell_slug, "quantity": 1, "item_price": 99.0}]
+        value = 99.0
+    else:
+        ids, contents, value = order_contents(order)
+        if order.upsell_slug:
+            ids = [i for i in ids if i != order.upsell_slug]
+            contents = [c for c in contents if c.get("id") != order.upsell_slug]
+            value = cents_to_mad(order.subtotal_cents)
     await dispatch_capi(
         event_name="Purchase",
         event_id=event_id,

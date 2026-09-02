@@ -35,6 +35,8 @@ def _client_ip(request: Request) -> str:
 
 @router.post("/tracking/events")
 async def track_event(payload: TrackingIn, request: Request, background: BackgroundTasks):
+    if payload.event_name in {"Purchase", "CompletePayment", "PURCHASE"}:
+        return {"ok": True, "event_id": payload.event_id, "skipped": "order_capi"}
     user = CapiUser(
         phone_e164=payload.phone,
         full_name=payload.full_name,

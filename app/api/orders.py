@@ -8,7 +8,7 @@ from app.db import get_session
 from app.dependencies import get_current_admin
 from app.models import Order, OrderItem, Product
 from app.schemas import OrderCreate, UpsellCreate
-from app.services.capi import send_purchase
+from app.services.capi import purchase_event_id, send_purchase
 from app.services.cities import find_city
 from app.services.fraud import ip_is_blocked
 from app.services.phone import normalize_ma_phone, to_national
@@ -60,11 +60,12 @@ def _serialize(order: Order) -> dict:
             "price": 99,
             "candidates": [s for s in PRODUCT_SLUGS if s not in {order.product_slug, order.cross_sell_slug}],
         },
+        "purchase_event_id": purchase_event_id(order.id),
     }
 
 
 def _queue_side_effects(background: BackgroundTasks, order: Order, product_name: str) -> None:
-    background.add_task(send_purchase, order, order.event_id)
+    background.add_task(send_purchase, order, purchase_event_id(order.id))
     background.add_task(push_order_to_sheets, order, product_name)
 
 
@@ -194,7 +195,7 @@ def add_upsell(
     session.commit()
     session.refresh(order)
     name = product_name_ar(session, order.product_slug)
-    background.add_task(send_purchase, order, payload.event_id)
+    background.add_task(send_purchase, order, purchase_event_id(order.id, "upsell"), upsell_only=True)
     background.add_task(push_order_to_sheets, order, name)
     return _serialize(order)
 
