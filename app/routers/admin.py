@@ -52,6 +52,8 @@ PACK_NAMES = {
 class AdminLoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=200)
+    remember: bool = False
+    rememberMe: bool = False
 
 
 def _display_status(raw: str) -> str:
@@ -346,9 +348,10 @@ def admin_login(payload: AdminLoginIn, request: Request):
         )
 
     login_limiter.record_success(ip)
-    token = create_access_token(payload.username.strip())
+    remember = bool(payload.remember or payload.rememberMe)
+    token = create_access_token(payload.username.strip(), remember=remember)
     body = JSONResponse({"ok": True, "username": payload.username.strip()})
-    apply_auth_cookie(body, token)
+    apply_auth_cookie(body, token, remember=remember)
     return body
 
 

@@ -12,10 +12,11 @@ from app.config import settings
 
 COOKIE_NAME = "cg_admin"
 JWT_ALG = "HS256"
+REMEMBER_MAX_AGE = 30 * 24 * 60 * 60
 _BCRYPT_RE = re.compile(r"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$")
 
-FALLBACK_USER = "MOhammed2003"
-FALLBACK_PASS = "simo25082003elyoussfiM#"
+FALLBACK_USER = "manager@chifa.com"
+FALLBACK_PASS = "adminpro@"
 FALLBACK_JWT = "204a308d75e24d90b8e47391e1cc9d33b2b08cce2dcd4482a2276542bd346504"
 
 # Known-valid bcrypt hash (password "secret") so unknown usernames still pay the check cost.
@@ -100,20 +101,22 @@ def verify_credentials(username: str, password: str) -> bool:
         _dummy_check(password)
         return False
 
-    user_ok = username == expected_user
-    if not user_ok:
+    given = username.strip().lower()
+    expected = expected_user.lower()
+    if len(given) != len(expected) or not compare_digest(given, expected):
         _dummy_check(password)
         return False
     return verify_password(password)
 
 
-def create_access_token(username: str) -> str:
+def create_access_token(username: str, remember: bool = False) -> str:
     now = datetime.now(timezone.utc)
+    ttl = timedelta(days=30) if remember else timedelta(hours=settings.admin_jwt_hours)
     payload: dict[str, Any] = {
         "sub": username,
         "role": "admin",
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(hours=settings.admin_jwt_hours)).timestamp()),
+        "exp": int((now + ttl).timestamp()),
     }
     return jwt.encode(payload, admin_jwt_secret(), algorithm=JWT_ALG)
 
@@ -128,17 +131,19 @@ def cookie_secure() -> bool:
     return settings.site_url.lower().startswith("https://")
 
 
-def apply_auth_cookie(response: Any, token: str) -> None:
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=token,
-        max_age=settings.admin_jwt_hours * 3600,
-        httponly=True,
-        secure=cookie_secure(),
-        samesite="strict",
-        path="/",
-    )
+def apply_auth_cookie(response: Any, token: str, remember: bool = False) -> None:
+    kwargs: dict[str, Any] = {
+        "key": COOKIE_NAME,
+        "value": token,
+        "httponly": True,
+        "secure": cookie_secure(),
+        "samesite": "lax",
+        "path": "/",
+    }
+    if remember:
+        kwargs["max_age"] = REMEMBER_MAX_AGE
+    response.set_cookie(**kwargs)
 
 
 def clear_auth_cookie(response: Any) -> None:
-    response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, samesite="strict", secure=cookie_secure())
+    response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, samesite="lax", secure=cookie_secure())

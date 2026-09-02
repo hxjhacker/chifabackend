@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     maxmind_license_key: str = ""
     enable_ip_fraud_check: bool = True
 
-    admin_username: str = "MOhammed2003"
-    admin_password: str = "simo25082003elyoussfiM#"
+    admin_username: str = "manager@chifa.com"
+    admin_password: str = "adminpro@"
     admin_password_hash: str = ""
     admin_jwt_secret: str = "204a308d75e24d90b8e47391e1cc9d33b2b08cce2dcd4482a2276542bd346504"
     admin_jwt_hours: int = 12
