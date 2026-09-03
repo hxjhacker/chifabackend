@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     meta_pixel_id: str = ""
     meta_capi_access_token: str = ""
     meta_test_event_code: str = ""
+    meta_ad_account_id: str = ""
+    meta_access_token: str = ""
 
     tiktok_pixel_id: str = ""
     tiktok_access_token: str = ""
