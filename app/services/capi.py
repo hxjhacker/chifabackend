@@ -16,7 +16,7 @@ from app.services.pricing import cents_to_mad
 
 def purchase_event_id(order_id: Any, kind: str = "order") -> str:
     suffix = "_upsell" if kind == "upsell" else ""
-    return f"purchase_{order_id}{suffix}"
+    return f"order_{order_id}{suffix}"
 
 
 @dataclass

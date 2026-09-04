@@ -9,7 +9,6 @@ from app.api.health import router as health_router
 from app.api.orders import router as orders_router
 from app.api.products import router as products_router
 from app.api.tracking import router as tracking_router
-from app.api.meta_insights import router as meta_insights_router
 from app.routers.admin import router as admin_router
 from app.config import settings
 from app.db import engine, ensure_order_columns
@@ -42,5 +41,4 @@ app.include_router(products_router)
 app.include_router(cities_router)
 app.include_router(orders_router)
 app.include_router(tracking_router)
-app.include_router(meta_insights_router)
 app.include_router(admin_router)
