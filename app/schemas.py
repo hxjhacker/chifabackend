@@ -15,6 +15,7 @@ class OrderCreate(BaseModel):
     ttclid: str | None = None
     sccid: str | None = None
     landing_url: str | None = None
+    defer_purchase: bool = False
 
 
 class UpsellCreate(BaseModel):

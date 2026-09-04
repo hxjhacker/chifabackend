@@ -65,8 +65,11 @@ def _serialize(order: Order) -> dict:
     }
 
 
-def _queue_side_effects(background: BackgroundTasks, order: Order, product_name: str) -> None:
-    background.add_task(send_purchase, order, purchase_event_id(order.id))
+def _queue_side_effects(
+    background: BackgroundTasks, order: Order, product_name: str, *, send_capi: bool = True
+) -> None:
+    if send_capi:
+        background.add_task(send_purchase, order, purchase_event_id(order.id))
     background.add_task(push_order_to_sheets, order, product_name)
     background.add_task(
         _notify_order,
@@ -180,7 +183,7 @@ def create_order(
         )
     session.commit()
     session.refresh(order)
-    _queue_side_effects(background, order, product.name_ar)
+    _queue_side_effects(background, order, product.name_ar, send_capi=not payload.defer_purchase)
     return _serialize(order)
 
 
@@ -195,6 +198,7 @@ def add_upsell(
     if not order:
         raise HTTPException(status_code=404, detail="order_not_found")
     if order.upsell_slug:
+        background.add_task(send_purchase, order, purchase_event_id(order.id))
         return _serialize(order)
     if payload.product_slug not in PRODUCT_SLUGS:
         raise HTTPException(status_code=422, detail="invalid_product")
@@ -220,8 +224,21 @@ def add_upsell(
     session.commit()
     session.refresh(order)
     name = product_name_ar(session, order.product_slug)
-    background.add_task(send_purchase, order, purchase_event_id(order.id, "upsell"), upsell_only=True)
+    background.add_task(send_purchase, order, purchase_event_id(order.id))
     background.add_task(push_order_to_sheets, order, name)
+    return _serialize(order)
+
+
+@router.post("/orders/{order_id}/purchase")
+def finalize_purchase(
+    order_id: UUID,
+    background: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    order = session.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    background.add_task(send_purchase, order, purchase_event_id(order.id))
     return _serialize(order)
 
 
