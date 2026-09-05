@@ -73,10 +73,8 @@ def create_colis(order: Any) -> dict[str, Any]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "X-API-KEY": settings.meta_livraison_api_key.strip(),
-        "X-API-SECRET": settings.meta_livraison_api_secret.strip(),
-        "Api-Key": settings.meta_livraison_api_key.strip(),
-        "Api-Secret": settings.meta_livraison_api_secret.strip(),
+        "X-API-Key": settings.meta_livraison_api_key.strip(),
+        "X-API-Secret": settings.meta_livraison_api_secret.strip(),
     }
     try:
         with httpx.Client(timeout=25.0) as client:
@@ -87,6 +85,17 @@ def create_colis(order: Any) -> dict[str, Any]:
             detail = ""
             if isinstance(payload, dict):
                 detail = str(payload.get("message") or payload.get("detail") or payload.get("error") or "")
+            if res.status_code == 401:
+                print(
+                    "401 details:",
+                    {
+                        "origin": "meta_livraison",
+                        "status": 401,
+                        "hasKey": bool((settings.meta_livraison_api_key or "").strip()),
+                        "hasSecret": bool((settings.meta_livraison_api_secret or "").strip()),
+                        "error": payload or detail,
+                    },
+                )
             return {"ok": False, "status": res.status_code, "detail": detail or "meta_livraison_failed", "code": code}
         return {"ok": True, "status": res.status_code, "detail": "", "code": code}
     except Exception as err:

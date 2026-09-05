@@ -5,13 +5,14 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect, or_, text
 from sqlmodel import Session, select
 
 from app.db import get_session
-from app.dependencies import client_ip, get_current_admin
+from app.dependencies import bearer_scheme, client_ip, get_current_admin
 from app.models import Order
 from app.rate_limit import login_limiter
 from app.security import (
@@ -682,10 +683,20 @@ def admin_update_order(
 @router.post("/orders/{order_id}/livraison")
 def admin_send_livraison(
     order_id: str,
-    admin: dict = Depends(get_current_admin),
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     session: Session = Depends(get_session),
 ):
-    _ = admin
+    try:
+        get_current_admin(request, creds)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            print("401 details:", {"origin": "admin_session", "error": exc.detail})
+            return JSONResponse(
+                {"success": False, "message": "جلسة الأدمن غير صالحة. أعد تسجيل الدخول.", "origin": "admin_session"},
+                status_code=401,
+            )
+        raise
     from app.services.meta_livraison import configured, create_colis
 
     if not configured():
@@ -697,13 +708,24 @@ def admin_send_livraison(
         raise HTTPException(status_code=422, detail="cannot_ship_cancelled")
     existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
     if existing:
-        return _serialize_order(order)
+        return {**_serialize_order(order), "success": True}
     if not _has_complete_confirm_details(order):
         raise HTTPException(status_code=422, detail="confirmation_details_required")
 
     result = create_colis(order)
     if not result.get("ok"):
-        raise HTTPException(status_code=int(result.get("status") or 502), detail=result.get("detail") or "meta_livraison_failed")
+        from_meta_auth = int(result.get("status") or 0) == 401
+        if from_meta_auth:
+            print("401 details:", {"origin": "meta_livraison", "error": result.get("detail")})
+        message = (
+            "مفاتيح Meta Livraison مرفوضة (401 من شركة التوصيل). تحقق من META_LIVRAISON_API_KEY و META_LIVRAISON_API_SECRET."
+            if from_meta_auth
+            else (result.get("detail") or "meta_livraison_failed")
+        )
+        return JSONResponse(
+            {"success": False, "message": message, "origin": "meta_livraison", "detail": result.get("detail")},
+            status_code=502 if from_meta_auth else int(result.get("status") or 502),
+        )
 
     cols = _order_column_names(session)
     code = str(result.get("code") or str(order.id)[:12]).upper()
@@ -716,4 +738,4 @@ def admin_send_livraison(
     session.add(order)
     session.commit()
     session.refresh(order)
-    return _serialize_order(order)
+    return {**_serialize_order(order), "success": True}
