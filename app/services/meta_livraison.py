@@ -1,22 +1,27 @@
 from __future__ import annotations
 
+import os
+import traceback
 from typing import Any
 
 import httpx
 
-from app.config import settings
-
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE", "YOUR_API_SECRET_HERE"}
+DEFAULT_BASE = "https://api.metalivraison.ma/colis-service"
+
+
+def _env(name: str, fallback: str = "") -> str:
+    return (os.getenv(name) or fallback).strip()
 
 
 def configured() -> bool:
-    key = (settings.meta_livraison_api_key or "").strip()
-    secret = (settings.meta_livraison_api_secret or "").strip()
+    key = _env("META_LIVRAISON_API_KEY")
+    secret = _env("META_LIVRAISON_API_SECRET")
     return bool(key and secret and key not in EMPTY_KEYS and secret not in EMPTY_KEYS)
 
 
 def base_url() -> str:
-    return (settings.meta_livraison_base_url or "https://api.metalivraison.ma/colis-service").strip().rstrip("/")
+    return _env("META_LIVRAISON_BASE_URL", DEFAULT_BASE).rstrip("/")
 
 
 def _national_phone(phone: str, phone_national: str) -> str:
@@ -43,21 +48,23 @@ def _pick_code(payload: Any) -> str:
 
 
 def create_colis(order: Any) -> dict[str, Any]:
+    key = _env("META_LIVRAISON_API_KEY")
+    secret = _env("META_LIVRAISON_API_SECRET")
     if not configured():
-        return {"ok": False, "status": 503, "detail": "meta_livraison_not_configured", "code": ""}
+        return {"ok": False, "status": 400, "detail": "meta_livraison_not_configured", "code": "", "text": ""}
 
     price = round(float(getattr(order, "total_cents", 0) or 0) / 100)
     phone = _national_phone(str(getattr(order, "phone", "") or ""), str(getattr(order, "phone_national", "") or ""))
     address = str(getattr(order, "address", "") or getattr(order, "city", "") or "").strip()
     pack = str(getattr(order, "product_slug", "") or "")
     body = {
-        "reference": str(order.id),
-        "nom": order.full_name,
-        "fullname": order.full_name,
+        "reference": str(getattr(order, "id", "")),
+        "nom": getattr(order, "full_name", "") or "",
+        "fullname": getattr(order, "full_name", "") or "",
         "telephone": phone,
         "phone": phone,
-        "ville": order.city,
-        "city": order.city,
+        "ville": getattr(order, "city", "") or "",
+        "city": getattr(order, "city", "") or "",
         "adresse": address,
         "address": address,
         "prix": price,
@@ -73,31 +80,31 @@ def create_colis(order: Any) -> dict[str, Any]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "X-API-Key": settings.meta_livraison_api_key.strip(),
-        "X-API-Secret": settings.meta_livraison_api_secret.strip(),
+        "X-API-Key": key,
+        "X-API-Secret": secret,
     }
     try:
-        with httpx.Client(timeout=25.0) as client:
+        with httpx.Client(timeout=15.0) as client:
             res = client.post(base_url(), json=body, headers=headers)
-        payload = res.json() if res.content else {}
-        code = _pick_code(payload)
+        text = res.text or ""
+        payload: Any = {}
+        try:
+            payload = res.json() if text else {}
+        except Exception:
+            payload = {}
         if res.status_code >= 400:
-            detail = ""
-            if isinstance(payload, dict):
-                detail = str(payload.get("message") or payload.get("detail") or payload.get("error") or "")
-            if res.status_code == 401:
-                print(
-                    "401 details:",
-                    {
-                        "origin": "meta_livraison",
-                        "status": 401,
-                        "hasKey": bool((settings.meta_livraison_api_key or "").strip()),
-                        "hasSecret": bool((settings.meta_livraison_api_secret or "").strip()),
-                        "error": payload or detail,
-                    },
-                )
-            return {"ok": False, "status": res.status_code, "detail": detail or "meta_livraison_failed", "code": code}
-        return {"ok": True, "status": res.status_code, "detail": "", "code": code}
+            print(
+                "401 details:" if res.status_code == 401 else "meta_livraison_http_error:",
+                {"origin": "meta_livraison", "status": res.status_code, "error": text[:2000]},
+            )
+            return {
+                "ok": False,
+                "status": res.status_code,
+                "detail": text or "meta_livraison_failed",
+                "code": _pick_code(payload),
+                "text": text,
+            }
+        return {"ok": True, "status": res.status_code, "detail": "", "code": _pick_code(payload), "text": text}
     except Exception as err:
-        print("meta_livraison_failed", err)
-        return {"ok": False, "status": 502, "detail": "meta_livraison_failed", "code": ""}
+        traceback.print_exc()
+        return {"ok": False, "status": 500, "detail": str(err), "code": "", "text": str(err)}

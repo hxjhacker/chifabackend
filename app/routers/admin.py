@@ -687,55 +687,60 @@ def admin_send_livraison(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     session: Session = Depends(get_session),
 ):
+    import traceback
+
     try:
-        get_current_admin(request, creds)
-    except HTTPException as exc:
-        if exc.status_code == 401:
-            print("401 details:", {"origin": "admin_session", "error": exc.detail})
+        try:
+            get_current_admin(request, creds)
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                print("401 details:", {"origin": "admin_session", "error": exc.detail})
+                return JSONResponse(
+                    {"success": False, "message": "جلسة الأدمن غير صالحة. أعد تسجيل الدخول.", "origin": "admin_session"},
+                    status_code=401,
+                )
+            raise
+
+        from app.services.meta_livraison import configured, create_colis
+
+        if not configured():
             return JSONResponse(
-                {"success": False, "message": "جلسة الأدمن غير صالحة. أعد تسجيل الدخول.", "origin": "admin_session"},
-                status_code=401,
+                {"success": False, "detail": "META_LIVRAISON_API_KEY or META_LIVRAISON_API_SECRET is missing"},
+                status_code=400,
             )
-        raise
-    from app.services.meta_livraison import configured, create_colis
+        order = _load_order(session, order_id)
+        if not order:
+            return JSONResponse({"success": False, "detail": "order_not_found"}, status_code=404)
+        if _display_status(str(order.status or "")) == "cancelled":
+            return JSONResponse({"success": False, "detail": "cannot_ship_cancelled"}, status_code=400)
+        existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
+        if existing:
+            return {**_serialize_order(order), "success": True}
+        if not _has_complete_confirm_details(order):
+            return JSONResponse({"success": False, "detail": "confirmation_details_required"}, status_code=400)
 
-    if not configured():
-        raise HTTPException(status_code=503, detail="meta_livraison_not_configured")
-    order = _load_order(session, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="order_not_found")
-    if _display_status(str(order.status or "")) == "cancelled":
-        raise HTTPException(status_code=422, detail="cannot_ship_cancelled")
-    existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
-    if existing:
+        result = create_colis(order)
+        if not result.get("ok"):
+            detail = result.get("text") or result.get("detail") or "meta_livraison_failed"
+            print("401 details:" if int(result.get("status") or 0) == 401 else "meta_livraison_failed:", detail)
+            return JSONResponse({"success": False, "detail": detail}, status_code=400)
+
+        cols = _order_column_names(session)
+        code = str(result.get("code") or str(order.id)[:12]).upper()
+        now = datetime.now(timezone.utc)
+        _assign(order, cols, "meta_livraison_code", code)
+        _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
+        _assign(order, cols, "status", "shipped")
+        _stamp_status(order, "shipped", cols)
+        _assign(order, cols, "updated_at", now)
+        session.add(order)
+        session.commit()
+        session.refresh(order)
         return {**_serialize_order(order), "success": True}
-    if not _has_complete_confirm_details(order):
-        raise HTTPException(status_code=422, detail="confirmation_details_required")
-
-    result = create_colis(order)
-    if not result.get("ok"):
-        from_meta_auth = int(result.get("status") or 0) == 401
-        if from_meta_auth:
-            print("401 details:", {"origin": "meta_livraison", "error": result.get("detail")})
-        message = (
-            "مفاتيح Meta Livraison مرفوضة (401 من شركة التوصيل). تحقق من META_LIVRAISON_API_KEY و META_LIVRAISON_API_SECRET."
-            if from_meta_auth
-            else (result.get("detail") or "meta_livraison_failed")
-        )
-        return JSONResponse(
-            {"success": False, "message": message, "origin": "meta_livraison", "detail": result.get("detail")},
-            status_code=502 if from_meta_auth else int(result.get("status") or 502),
-        )
-
-    cols = _order_column_names(session)
-    code = str(result.get("code") or str(order.id)[:12]).upper()
-    now = datetime.now(timezone.utc)
-    _assign(order, cols, "meta_livraison_code", code)
-    _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
-    _assign(order, cols, "status", "shipped")
-    _stamp_status(order, "shipped", cols)
-    _assign(order, cols, "updated_at", now)
-    session.add(order)
-    session.commit()
-    session.refresh(order)
-    return {**_serialize_order(order), "success": True}
+    except Exception as e:
+        traceback.print_exc()
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
