@@ -163,6 +163,8 @@ def _serialize_order(order: Order) -> dict:
         "shipped_at": _iso(getattr(order, "shipped_at", None)),
         "delivered_at": _iso(getattr(order, "delivered_at", None)),
         "cancelled_at": _iso(getattr(order, "cancelled_at", None)),
+        "meta_livraison_code": getattr(order, "meta_livraison_code", None),
+        "meta_livraison_sent_at": _iso(getattr(order, "meta_livraison_sent_at", None)),
     }
 
 
@@ -675,3 +677,43 @@ def admin_update_order(
         if not order:
             raise HTTPException(status_code=404, detail="order_not_found")
         return _serialize_order(order)
+
+
+@router.post("/orders/{order_id}/livraison")
+def admin_send_livraison(
+    order_id: str,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    from app.services.meta_livraison import configured, create_colis
+
+    if not configured():
+        raise HTTPException(status_code=503, detail="meta_livraison_not_configured")
+    order = _load_order(session, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    if _display_status(str(order.status or "")) == "cancelled":
+        raise HTTPException(status_code=422, detail="cannot_ship_cancelled")
+    existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
+    if existing:
+        return _serialize_order(order)
+    if not _has_complete_confirm_details(order):
+        raise HTTPException(status_code=422, detail="confirmation_details_required")
+
+    result = create_colis(order)
+    if not result.get("ok"):
+        raise HTTPException(status_code=int(result.get("status") or 502), detail=result.get("detail") or "meta_livraison_failed")
+
+    cols = _order_column_names(session)
+    code = str(result.get("code") or str(order.id)[:12]).upper()
+    now = datetime.now(timezone.utc)
+    _assign(order, cols, "meta_livraison_code", code)
+    _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
+    _assign(order, cols, "status", "shipped")
+    _stamp_status(order, "shipped", cols)
+    _assign(order, cols, "updated_at", now)
+    session.add(order)
+    session.commit()
+    session.refresh(order)
+    return _serialize_order(order)

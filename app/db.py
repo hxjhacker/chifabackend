@@ -31,6 +31,8 @@ ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipped_at timestamptz",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at timestamptz",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at timestamptz",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_code varchar(80)",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_sent_at timestamptz",
 )
 
 PAGE_VIEWS_SQL = (
