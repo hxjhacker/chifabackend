@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import traceback
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -8,7 +10,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import HTTPAuthorizationCredentials
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect, or_, text
 from sqlmodel import Session, select
@@ -58,6 +60,11 @@ class AdminLoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=200)
     remember: bool = False
     rememberMe: bool = False
+
+
+class BulkOrderIds(BaseModel):
+    order_ids: list[str] = Field(default_factory=list)
+    tracking_numbers: list[str] = Field(default_factory=list)
 
 
 def _display_status(raw: str) -> str:
@@ -237,6 +244,104 @@ def _load_order(session: Session, order_id: str) -> Order | None:
             return session.get(Order, raw)
         except Exception:
             return None
+
+
+MAX_BULK = 80
+
+
+def _bulk_tokens(payload: BulkOrderIds) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in list(payload.order_ids or []) + list(payload.tracking_numbers or []):
+        token = str(raw or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+        if len(out) >= MAX_BULK:
+            break
+    return out
+
+
+def _load_order_or_tracking(session: Session, token: str) -> Order | None:
+    order = _load_order(session, token)
+    if order:
+        return order
+    code = (token or "").strip()
+    if not code:
+        return None
+    return session.exec(select(Order).where(Order.meta_livraison_code == code)).first()
+
+
+def _meta_creds() -> tuple[str, str, str]:
+    api_key = (os.getenv("META_LIVRAISON_API_KEY") or os.environ.get("META_LIVRAISON_API_KEY") or "").strip()
+    api_secret = (os.getenv("META_LIVRAISON_API_SECRET") or os.environ.get("META_LIVRAISON_API_SECRET") or "").strip()
+    base_url = (
+        os.getenv("META_LIVRAISON_BASE_URL")
+        or os.environ.get("META_LIVRAISON_BASE_URL")
+        or "https://api.metalivraison.ma/colis-service"
+    ).rstrip("/")
+    return api_key, api_secret, base_url
+
+
+def _detail_text(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value)
+
+
+def _persist_shipped(session: Session, order: Order, code: str, ticket_url: str | None) -> None:
+    cols = _order_column_names(session)
+    now = datetime.now(timezone.utc)
+    _assign(order, cols, "meta_livraison_code", code)
+    _assign(order, cols, "meta_livraison_ticket_url", ticket_url)
+    _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
+    _assign(order, cols, "status", "shipped")
+    _stamp_status(order, "shipped", cols)
+    _assign(order, cols, "updated_at", now)
+    session.add(order)
+    session.commit()
+    session.refresh(order)
+
+
+def _dispatch_one(
+    session: Session,
+    order: Order,
+    *,
+    api_key: str,
+    api_secret: str,
+    base_url: str,
+    require_confirmed: bool,
+) -> dict[str, Any]:
+    from app.services.meta_livraison import create_colis
+
+    order_id = str(order.id)
+    status_now = _display_status(str(getattr(order, "status", "") or ""))
+    city = str(getattr(order, "city", "") or "").strip()
+    existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
+    if status_now == "cancelled":
+        return {"order_id": order_id, "success": False, "tracking": "", "error": "cannot_ship_cancelled"}
+    if len(city) < 2:
+        return {"order_id": order_id, "success": False, "tracking": "", "error": "invalid_city"}
+    if existing:
+        return {"order_id": order_id, "success": True, "tracking": existing, "error": ""}
+    if require_confirmed and status_now not in ("confirmed", "shipped"):
+        return {"order_id": order_id, "success": False, "tracking": "", "error": "order_not_confirmed"}
+    if not _has_complete_confirm_details(order):
+        return {"order_id": order_id, "success": False, "tracking": "", "error": "confirmation_details_required"}
+    result = create_colis(order, api_key=api_key, api_secret=api_secret, base_url=base_url)
+    if not result.get("ok"):
+        err = _detail_text(result.get("detail") if result.get("detail") not in (None, "") else result.get("text"))
+        return {"order_id": order_id, "success": False, "tracking": "", "error": err or "meta_livraison_failed"}
+    code = str(result.get("code") or "").strip() or str(order.id).replace("-", "")[:8].upper()
+    ticket_url = str(result.get("ticket_url") or "").strip() or None
+    _persist_shipped(session, order, code, ticket_url)
+    return {"order_id": order_id, "success": True, "tracking": code, "error": ""}
 
 
 def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols: set[str] | None = None) -> Order:
@@ -689,6 +794,120 @@ def admin_update_order(
         return _serialize_order(order)
 
 
+@router.post("/orders/bulk-livraison")
+def admin_bulk_livraison(
+    payload: BulkOrderIds,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    tokens = _bulk_tokens(payload)
+    if not tokens:
+        raise HTTPException(status_code=422, detail="order_ids_required")
+    from app.services.meta_livraison import configured, debug_credentials
+
+    api_key, api_secret, base_url = _meta_creds()
+    debug_credentials(api_key, api_secret, base_url)
+    if not configured(api_key, api_secret):
+        raise HTTPException(status_code=400, detail="meta_livraison_not_configured")
+
+    results: list[dict[str, Any]] = []
+    for token in tokens:
+        order = _load_order_or_tracking(session, token)
+        if not order:
+            results.append({"order_id": token, "success": False, "tracking": "", "error": "order_not_found"})
+            continue
+        try:
+            results.append(
+                _dispatch_one(
+                    session,
+                    order,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    base_url=base_url,
+                    require_confirmed=True,
+                )
+            )
+        except Exception as exc:
+            traceback.print_exc()
+            session.rollback()
+            results.append({"order_id": str(order.id), "success": False, "tracking": "", "error": str(exc)})
+    success_count = sum(1 for row in results if row.get("success"))
+    return {
+        "success_count": success_count,
+        "failed_count": len(results) - success_count,
+        "results": results,
+    }
+
+
+@router.post("/orders/bulk-labels")
+def admin_bulk_labels(
+    payload: BulkOrderIds,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    tokens = _bulk_tokens(payload)
+    if not tokens:
+        raise HTTPException(status_code=422, detail="order_ids_required")
+    from app.services.meta_livraison import configured, fetch_etiquette_pdf, merge_label_pdfs
+
+    api_key, api_secret, base_url = _meta_creds()
+    if not configured(api_key, api_secret):
+        raise HTTPException(status_code=400, detail="meta_livraison_not_configured")
+
+    blobs: list[bytes] = []
+    for token in tokens:
+        order = _load_order_or_tracking(session, token)
+        if not order:
+            continue
+        code = str(getattr(order, "meta_livraison_code", "") or "").strip()
+        ticket = str(getattr(order, "meta_livraison_ticket_url", "") or "").strip()
+        if not code and not ticket:
+            continue
+        pdf = fetch_etiquette_pdf(
+            code=code,
+            ticket_url=ticket,
+            api_key=api_key,
+            api_secret=api_secret,
+            base_url_override=base_url,
+        )
+        if pdf:
+            blobs.append(pdf)
+    if not blobs:
+        raise HTTPException(status_code=400, detail="no_labels")
+    try:
+        merged = merge_label_pdfs(blobs)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="no_labels") from exc
+    return Response(
+        content=merged,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="chifaglow-labels.pdf"'},
+    )
+
+
+@router.post("/orders/manifest")
+def admin_manifest(
+    payload: BulkOrderIds,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    tokens = _bulk_tokens(payload)
+    if not tokens:
+        raise HTTPException(status_code=422, detail="order_ids_required")
+    from app.services.manifest import render_manifest_html
+
+    loaded: list[Order] = []
+    for token in tokens:
+        order = _load_order_or_tracking(session, token)
+        if order:
+            loaded.append(order)
+    html = render_manifest_html(loaded)
+    return HTMLResponse(content=html)
+
+
 @router.post("/orders/{order_id}/livraison")
 async def admin_send_livraison(order_id: str, request: Request):
     try:
@@ -711,17 +930,9 @@ async def admin_send_livraison(order_id: str, request: Request):
                     status_code=exc.status_code,
                 )
 
-            import os
+            from app.services.meta_livraison import configured, debug_credentials
 
-            from app.services.meta_livraison import configured, create_colis, debug_credentials
-
-            api_key = (os.getenv("META_LIVRAISON_API_KEY") or os.environ.get("META_LIVRAISON_API_KEY") or "").strip()
-            api_secret = (os.getenv("META_LIVRAISON_API_SECRET") or os.environ.get("META_LIVRAISON_API_SECRET") or "").strip()
-            base_url = (
-                os.getenv("META_LIVRAISON_BASE_URL")
-                or os.environ.get("META_LIVRAISON_BASE_URL")
-                or "https://api.metalivraison.ma/colis-service"
-            ).rstrip("/")
+            api_key, api_secret, base_url = _meta_creds()
             print(f"[DEBUG META LIVRAISON] Base URL: {base_url}", flush=True)
             print(f"[DEBUG META LIVRAISON] Key length: {len(api_key)}, Key prefix: {api_key[:6]}...", flush=True)
             print(f"[DEBUG META LIVRAISON] Secret length: {len(api_secret)}, Secret prefix: {api_secret[:6]}...", flush=True)
@@ -735,40 +946,28 @@ async def admin_send_livraison(order_id: str, request: Request):
             order = _load_order(session, order_id)
             if not order:
                 return JSONResponse({"success": False, "detail": "order_not_found"}, status_code=404)
-            if _display_status(str(getattr(order, "status", "") or "")) == "cancelled":
-                return JSONResponse({"success": False, "detail": "cannot_ship_cancelled"}, status_code=400)
-            existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
-            if existing:
-                return JSONResponse({**_serialize_order(order), "success": True})
-            if not _has_complete_confirm_details(order):
-                return JSONResponse({"success": False, "detail": "confirmation_details_required"}, status_code=400)
 
-            result = create_colis(order, api_key=api_key, api_secret=api_secret, base_url=base_url)
-            if not result.get("ok"):
+            outcome = _dispatch_one(
+                session,
+                order,
+                api_key=api_key,
+                api_secret=api_secret,
+                base_url=base_url,
+                require_confirmed=False,
+            )
+            if not outcome.get("success"):
+                detail = outcome.get("error") or "meta_livraison_failed"
+                status_code = 404 if detail == "order_not_found" else 400
                 return JSONResponse(
-                    status_code=400,
+                    status_code=status_code,
                     content=jsonable_encoder(
                         {
                             "success": False,
                             "origin": "meta_livraison",
-                            "status_code": int(result.get("status") or 400),
-                            "detail": result.get("detail") if result.get("detail") not in (None, "") else result.get("text"),
+                            "detail": detail,
                         }
                     ),
                 )
-
-            cols = _order_column_names(session)
-            code = str(result.get("code") or "").strip() or str(order.id).replace("-", "")[:8].upper()
-            ticket_url = str(result.get("ticket_url") or "").strip() or None
-            now = datetime.now(timezone.utc)
-            _assign(order, cols, "meta_livraison_code", code)
-            _assign(order, cols, "meta_livraison_ticket_url", ticket_url)
-            _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
-            _assign(order, cols, "status", "shipped")
-            _stamp_status(order, "shipped", cols)
-            _assign(order, cols, "updated_at", now)
-            session.add(order)
-            session.commit()
             session.refresh(order)
             return JSONResponse({**_serialize_order(order), "success": True})
     except BaseException as e:

@@ -4,9 +4,11 @@ import json
 import os
 import re
 import traceback
+from io import BytesIO
 from typing import Any
 
 import httpx
+from pypdf import PdfReader, PdfWriter
 
 from app.services.meta_livraison_cities import FALLBACK_VILLE, has_arabic, is_official_meta_city, latin_ville
 
@@ -393,3 +395,60 @@ def create_colis(
     except Exception as err:
         traceback.print_exc()
         return {"ok": False, "status": 500, "detail": str(err), "code": "", "ticket_url": "", "text": str(err)}
+
+
+def etiquette_url_for(code: str, ticket_url: str = "", base: str | None = None) -> str:
+    ticket = str(ticket_url or "").strip()
+    if ticket.startswith("http://") or ticket.startswith("https://"):
+        return ticket
+    return _etiquette_fallback(base_url(base), code)
+
+
+def fetch_etiquette_pdf(
+    *,
+    code: str = "",
+    ticket_url: str = "",
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    base_url_override: str | None = None,
+) -> bytes | None:
+    key = _clean(api_key) or live_env("META_LIVRAISON_API_KEY")
+    secret = _clean(api_secret) or live_env("META_LIVRAISON_API_SECRET")
+    raw_base = _clean(base_url_override) or live_env("META_LIVRAISON_BASE_URL", DEFAULT_BASE)
+    url = etiquette_url_for(code, ticket_url, raw_base)
+    if not url:
+        return None
+    headers = {
+        "Accept": "application/pdf, application/octet-stream, */*",
+        "X-API-Key": key,
+        "X-API-Secret": secret,
+    }
+    try:
+        with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+            res = client.get(url, headers=headers)
+        if res.status_code >= 400:
+            print(f"[META_ETIQUETTE] GET {url} -> {res.status_code}", flush=True)
+            return None
+        body = res.content or b""
+        if body[:4] != b"%PDF":
+            print(f"[META_ETIQUETTE] not a PDF ({res.headers.get('content-type')})", flush=True)
+            return None
+        return body
+    except Exception:
+        traceback.print_exc()
+        return None
+
+
+def merge_label_pdfs(blobs: list[bytes]) -> bytes:
+    writer = PdfWriter()
+    for blob in blobs:
+        if not blob:
+            continue
+        reader = PdfReader(BytesIO(blob))
+        for page in reader.pages:
+            writer.add_page(page)
+    if not writer.pages:
+        raise ValueError("no_labels")
+    out = BytesIO()
+    writer.write(out)
+    return out.getvalue()
