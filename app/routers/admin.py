@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect, or_, text
@@ -683,103 +683,94 @@ def admin_update_order(
 
 
 @router.post("/orders/{order_id}/livraison")
-def admin_send_livraison(
-    order_id: str,
-    request: Request,
-    creds: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
-):
-    session: Session | None = None
+async def admin_send_livraison(order_id: str, request: Request):
     try:
-        try:
-            get_current_admin(request, creds)
-        except HTTPException as exc:
-            print("401 details:" if exc.status_code == 401 else "admin auth error:", exc.detail)
-            traceback.print_exc()
-            return JSONResponse(
-                {
-                    "success": False,
-                    "message": "جلسة الأدمن غير صالحة. أعد تسجيل الدخول." if exc.status_code == 401 else str(exc.detail),
-                    "origin": "admin_session",
-                    "error": str(exc.detail),
-                },
-                status_code=exc.status_code,
-            )
-
-        import os
-
-        from app.services.meta_livraison import configured, create_colis, debug_credentials
-
-        api_key = (os.getenv("META_LIVRAISON_API_KEY") or os.environ.get("META_LIVRAISON_API_KEY") or "").strip()
-        api_secret = (os.getenv("META_LIVRAISON_API_SECRET") or os.environ.get("META_LIVRAISON_API_SECRET") or "").strip()
-        base_url = (
-            os.getenv("META_LIVRAISON_BASE_URL")
-            or os.environ.get("META_LIVRAISON_BASE_URL")
-            or "https://api.metalivraison.ma/colis-service"
-        ).rstrip("/")
-        print(f"[DEBUG META LIVRAISON] Base URL: {base_url}")
-        print(f"[DEBUG META LIVRAISON] Key length: {len(api_key)}, Key prefix: {api_key[:6]}...")
-        print(f"[DEBUG META LIVRAISON] Secret length: {len(api_secret)}, Secret prefix: {api_secret[:6]}...")
-        debug_credentials(api_key, api_secret, base_url)
-
-        if not configured(api_key, api_secret):
-            return JSONResponse(
-                {"success": False, "detail": "META_LIVRAISON_API_KEY or META_LIVRAISON_API_SECRET is missing"},
-                status_code=400,
-            )
-
-        session = Session(engine)
-        order = _load_order(session, order_id)
-        if not order:
-            return JSONResponse({"success": False, "detail": "order_not_found"}, status_code=404)
-        if _display_status(str(getattr(order, "status", "") or "")) == "cancelled":
-            return JSONResponse({"success": False, "detail": "cannot_ship_cancelled"}, status_code=400)
-        existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
-        if existing:
-            return JSONResponse({**_serialize_order(order), "success": True})
-        if not _has_complete_confirm_details(order):
-            return JSONResponse({"success": False, "detail": "confirmation_details_required"}, status_code=400)
-
-        result = create_colis(order, api_key=api_key, api_secret=api_secret, base_url=base_url)
-        if not result.get("ok"):
-            return JSONResponse(
-                status_code=400,
-                content=jsonable_encoder(
+        with Session(engine) as session:
+            auth = (request.headers.get("authorization") or "").strip()
+            creds = None
+            if auth.lower().startswith("bearer ") and len(auth) > 7:
+                creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=auth.split(" ", 1)[1].strip())
+            try:
+                get_current_admin(request, creds)
+            except HTTPException as exc:
+                print("401 details:" if exc.status_code == 401 else "admin auth error:", exc.detail, flush=True)
+                return JSONResponse(
                     {
                         "success": False,
-                        "origin": "meta_livraison",
-                        "status_code": int(result.get("status") or 400),
-                        "detail": result.get("detail") if result.get("detail") not in (None, "") else result.get("text"),
-                    }
-                ),
-            )
+                        "message": "جلسة الأدمن غير صالحة. أعد تسجيل الدخول." if exc.status_code == 401 else str(exc.detail),
+                        "origin": "admin_session",
+                        "error": str(exc.detail),
+                    },
+                    status_code=exc.status_code,
+                )
 
-        cols = _order_column_names(session)
-        code = str(result.get("code") or str(order.id).replace("-", "")[:8]).upper()
-        now = datetime.now(timezone.utc)
-        _assign(order, cols, "meta_livraison_code", code)
-        _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
-        _assign(order, cols, "status", "shipped")
-        _stamp_status(order, "shipped", cols)
-        _assign(order, cols, "updated_at", now)
-        session.add(order)
-        session.commit()
-        session.refresh(order)
-        return JSONResponse({**_serialize_order(order), "success": True})
-    except Exception as e:
-        traceback.print_exc()
-        print("LIVRAISON EXCEPTION:", type(e).__name__, repr(e))
-        if session is not None:
-            try:
-                session.rollback()
-            except Exception:
-                pass
+            import os
+
+            from app.services.meta_livraison import configured, create_colis, debug_credentials
+
+            api_key = (os.getenv("META_LIVRAISON_API_KEY") or os.environ.get("META_LIVRAISON_API_KEY") or "").strip()
+            api_secret = (os.getenv("META_LIVRAISON_API_SECRET") or os.environ.get("META_LIVRAISON_API_SECRET") or "").strip()
+            base_url = (
+                os.getenv("META_LIVRAISON_BASE_URL")
+                or os.environ.get("META_LIVRAISON_BASE_URL")
+                or "https://api.metalivraison.ma/colis-service"
+            ).rstrip("/")
+            print(f"[DEBUG META LIVRAISON] Base URL: {base_url}", flush=True)
+            print(f"[DEBUG META LIVRAISON] Key length: {len(api_key)}, Key prefix: {api_key[:6]}...", flush=True)
+            print(f"[DEBUG META LIVRAISON] Secret length: {len(api_secret)}, Secret prefix: {api_secret[:6]}...", flush=True)
+            debug_credentials(api_key, api_secret, base_url)
+
+            if not configured(api_key, api_secret):
+                return JSONResponse(
+                    {"success": False, "detail": "META_LIVRAISON_API_KEY or META_LIVRAISON_API_SECRET is missing"},
+                    status_code=400,
+                )
+            order = _load_order(session, order_id)
+            if not order:
+                return JSONResponse({"success": False, "detail": "order_not_found"}, status_code=404)
+            if _display_status(str(getattr(order, "status", "") or "")) == "cancelled":
+                return JSONResponse({"success": False, "detail": "cannot_ship_cancelled"}, status_code=400)
+            existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
+            if existing:
+                return JSONResponse({**_serialize_order(order), "success": True})
+            if not _has_complete_confirm_details(order):
+                return JSONResponse({"success": False, "detail": "confirmation_details_required"}, status_code=400)
+
+            result = create_colis(order, api_key=api_key, api_secret=api_secret, base_url=base_url)
+            if not result.get("ok"):
+                return JSONResponse(
+                    status_code=400,
+                    content=jsonable_encoder(
+                        {
+                            "success": False,
+                            "origin": "meta_livraison",
+                            "status_code": int(result.get("status") or 400),
+                            "detail": result.get("detail") if result.get("detail") not in (None, "") else result.get("text"),
+                        }
+                    ),
+                )
+
+            cols = _order_column_names(session)
+            code = str(result.get("code") or str(order.id).replace("-", "")[:8]).upper()
+            now = datetime.now(timezone.utc)
+            _assign(order, cols, "meta_livraison_code", code)
+            _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
+            _assign(order, cols, "status", "shipped")
+            _stamp_status(order, "shipped", cols)
+            _assign(order, cols, "updated_at", now)
+            session.add(order)
+            session.commit()
+            session.refresh(order)
+            return JSONResponse({**_serialize_order(order), "success": True})
+    except BaseException as e:
+        tb = traceback.format_exc()
+        print(f"[LIVRAISON_FATAL_ERROR] {tb}", flush=True)
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "traceback": traceback.format_exc()},
+            content={
+                "success": False,
+                "error_type": type(e).__name__,
+                "detail": str(e),
+                "traceback": tb,
+            },
         )
-    finally:
-        if session is not None:
-            try:
-                session.close()
-            except Exception:
-                pass
