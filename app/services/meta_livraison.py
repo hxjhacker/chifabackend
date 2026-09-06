@@ -235,45 +235,65 @@ def _pick_code(payload: Any, fallback: str = "") -> str:
 
 
 def _as_ticket_url(value: Any, base: str = "") -> str:
-    if isinstance(value, dict):
-        for key in ("url", "href", "link", "etiquette", "pdf", "ticket_url"):
-            found = _as_ticket_url(value.get(key), base)
-            if found:
-                return found
+    try:
+        if isinstance(value, dict):
+            for key in ("url", "href", "link", "etiquette", "pdf", "ticket_url"):
+                found = _as_ticket_url(value.get(key), base)
+                if found:
+                    return found
+            return ""
+        text = str(value or "").strip()
+        if not text or text.lower() in {"true", "false", "none", "null"}:
+            return ""
+        root = str(base or "").rstrip("/")
+        if text.startswith("/"):
+            return f"{root}{text}" if root else text
+        if text.startswith("http://") or text.startswith("https://"):
+            return text
         return ""
-    text = str(value or "").strip()
-    if not text or text.lower() in {"true", "false", "none", "null"}:
+    except Exception:
         return ""
-    if text.startswith("/"):
-        root = base.rstrip("/")
-        return f"{root}{text}" if root else text
-    if text.startswith("http://") or text.startswith("https://"):
-        return text
-    return ""
 
 
-def _pick_ticket_url(payload: Any, base: str = "") -> str:
-    keys = (
-        "etiquette",
-        "etiquette_url",
-        "url_etiquette",
-        "lien_etiquette",
-        "ticket_url",
-        "ticketUrl",
-        "label_url",
-        "labelUrl",
-        "pdf_url",
-        "pdfUrl",
-        "pdf",
-        "ticket",
-        "label",
-    )
-    for layer in _payload_layers(payload):
-        for key in keys:
-            found = _as_ticket_url(layer.get(key), base)
-            if found:
-                return found
-    return ""
+def _etiquette_fallback(base: str, code: str) -> str:
+    root = str(base or "").rstrip("/")
+    colis_code = str(code or "").strip()
+    if not root or not colis_code:
+        return ""
+    if root.endswith(COLIS_PATH):
+        return f"{root}/{colis_code}/etiquette"
+    return f"{root}{COLIS_PATH}/{colis_code}/etiquette"
+
+
+def _pick_ticket_url(payload: Any, base: str = "", code: str = "") -> str:
+    try:
+        root = str(base or "").rstrip("/")
+        for layer in _payload_layers(payload):
+            for key in (
+                "etiquette",
+                "etiquette_url",
+                "url_etiquette",
+                "lien_etiquette",
+                "ticket_url",
+                "ticketUrl",
+                "label_url",
+                "labelUrl",
+                "pdf_url",
+                "pdfUrl",
+                "pdf",
+                "ticket",
+                "label",
+            ):
+                found = _as_ticket_url(layer.get(key), root)
+                if found:
+                    return found
+        return _etiquette_fallback(root, code)
+    except Exception:
+        traceback.print_exc()
+        try:
+            return _etiquette_fallback(base, code)
+        except Exception:
+            return ""
 
 
 def _meta_detail(res: httpx.Response) -> Any:
@@ -341,9 +361,19 @@ def create_colis(
                 "ticket_url": "",
                 "text": res.text,
             }
-        parsed = detail if isinstance(detail, dict) else {}
-        tracking = _pick_code(parsed, code)
-        ticket = _pick_ticket_url(parsed, base_url(raw_base))
+        tracking = code
+        ticket = ""
+        try:
+            parsed = detail if isinstance(detail, dict) else {}
+            tracking = _pick_code(parsed, code) or code
+            ticket = _pick_ticket_url(parsed, raw_base, tracking) or _etiquette_fallback(raw_base, tracking)
+        except Exception:
+            traceback.print_exc()
+            print("[META_LIVRAISON_PARSE_ERROR] Meta already created the parcel; keeping success", flush=True)
+            try:
+                ticket = _etiquette_fallback(raw_base, tracking or code)
+            except Exception:
+                ticket = ""
         print("[META_LIVRAISON_TRACKING]", tracking, flush=True)
         print("[META_LIVRAISON_TICKET_URL]", ticket, flush=True)
         return {
