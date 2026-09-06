@@ -7,40 +7,14 @@ from typing import Any
 
 import httpx
 
+from app.services.meta_livraison_cities import resolve_meta_city
+
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE", "YOUR_API_SECRET_HERE"}
 DEFAULT_BASE = "https://api.metalivraison.ma/colis-service"
 COLIS_PATH = "/api/v1/partner/colis"
 PACK_NAMES = {
     "quran": "مصحف شيفا جلو",
     "educative": "حصيرة تعليمية",
-}
-ARABIC_CITY_MAP = {
-    "الرباط": "Rabat",
-    "الدار البيضاء": "Casablanca",
-    "كازا": "Casablanca",
-    "مراكش": "Marrakech",
-    "طنجة": "Tanger",
-    "فاس": "Fes",
-    "مكناس": "Meknes",
-    "سلا": "Sale",
-    "أكادير": "Agadir",
-    "القنيطرة": "Kenitra",
-    "وجدة": "Oujda",
-    "تطوان": "Tetouan",
-    "تمارة": "Temara",
-    "المحمدية": "Mohammedia",
-    "الجديدة": "El Jadida",
-    "بني ملال": "Beni Mellal",
-    "الناظور": "Nador",
-    "خريبكة": "Khouribga",
-    "سطات": "Settat",
-    "برشيد": "Berrechid",
-    "العرائش": "Larache",
-    "الخميسات": "Khemisset",
-    "كلميم": "Guelmim",
-    "بركان": "Berkane",
-    "التازة": "Taza",
-    "تازة": "Taza",
 }
 
 
@@ -128,34 +102,8 @@ def _text(*values: Any, fallback: str = "") -> str:
     return fallback
 
 
-def _city_lookup() -> dict[str, str]:
-    table: dict[str, str] = {}
-    for arabic, french in ARABIC_CITY_MAP.items():
-        table[" ".join(arabic.split())] = french
-        table[" ".join(french.split()).casefold()] = french
-    return table
-
-
-_CITY_LOOKUP = _city_lookup()
-
-
 def latin_city(raw: str) -> str:
-    text = " ".join((raw or "").strip().split())
-    if not text:
-        return ""
-    mapped = _CITY_LOOKUP.get(text) or _CITY_LOOKUP.get(text.casefold())
-    if mapped:
-        return mapped
-    try:
-        from app.services.cities import find_city
-
-        found = find_city(text)
-        french = str((found or {}).get("fr") or "").strip()
-        if french:
-            return _CITY_LOOKUP.get(french) or _CITY_LOOKUP.get(french.casefold()) or french
-    except Exception:
-        pass
-    return text
+    return resolve_meta_city(raw)
 
 
 def build_payload(order: Any, phone: str) -> dict[str, Any]:
@@ -168,12 +116,13 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
     raw_price = float(getattr(order, "total_cents", 0) or 0) / 100
     price: int | float = int(raw_price) if raw_price.is_integer() else round(raw_price, 2)
     raw_city = _text(getattr(order, "city", None), fallback="")
-    ville = latin_city(raw_city)
+    ville = resolve_meta_city(raw_city)
+    print(f"[META_LIVRAISON_CITY] raw={raw_city!r} resolved={ville!r}", flush=True)
     raw_address = _text(getattr(order, "address", None), fallback="")
     if not raw_address or raw_address == raw_city:
         address = ville or "Centre Ville"
     else:
-        address = latin_city(raw_address) if raw_address in ARABIC_CITY_MAP else raw_address
+        address = raw_address
     slug = _text(getattr(order, "product_slug", None))
     marchendise = _text(PACK_NAMES.get(slug, slug), fallback="Produit")
     quantity = int(getattr(order, "tier_qty", None) or getattr(order, "quantity", None) or 1)
