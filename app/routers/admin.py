@@ -285,7 +285,9 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
         shipping = str(data["shipping_city"] or "").strip()[:160] or None
         _assign(order, known, "shipping_city", shipping)
         if shipping:
-            _assign(order, known, "region_id", region_id_for_city(shipping))
+            region_id = region_id_for_city(shipping)
+            if region_id:
+                _assign(order, known, "region_id", region_id)
     if "product_slug" in data and data["product_slug"]:
         _assign(order, known, "product_slug", str(data["product_slug"]))
     if "tier_qty" in data and data["tier_qty"]:
@@ -527,6 +529,10 @@ def admin_create_order(
     secondary_qty = max(1, min(20, int(body.get("secondary_qty") or 1)))
     address = str(body.get("address") or body.get("full_address") or "").strip() or None
     notes = str(body.get("courier_notes") or body.get("driver_comment") or "").strip() or None
+    shipping = str(body.get("shipping_city") or "").strip()[:160] or None
+    region_id = region_id_for_city(shipping) if shipping else ""
+    if not region_id:
+        region_id = _resolve_region(str(body.get("region_id") or body.get("region") or "") or None)
     order_id = uuid4()
     now = datetime.now(timezone.utc)
     order = Order(
@@ -535,6 +541,7 @@ def admin_create_order(
         phone=e164,
         phone_national=to_national(e164),
         city=city,
+        shipping_city=shipping,
         product_slug=slug,
         tier_qty=qty,
         tier_price_cents=cents,
@@ -550,7 +557,7 @@ def admin_create_order(
         building=str(body.get("building") or "").strip() or None,
         landmark=str(body.get("landmark") or "").strip() or None,
         courier_notes=notes,
-        region_id=_resolve_region(str(body.get("region_id") or body.get("region") or "") or None),
+        region_id=region_id or None,
         cross_sell_slug=cross if bundle else None,
         bundle_enabled=bundle,
         secondary_qty=secondary_qty if bundle else 1,
