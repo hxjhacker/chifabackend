@@ -197,16 +197,83 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
     }
 
 
-def _pick_code(payload: Any, fallback: str = "") -> str:
+def _payload_layers(payload: Any) -> list[dict[str, Any]]:
     if not isinstance(payload, dict):
-        return fallback
-    nested = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    colis = nested.get("colis") if isinstance(nested.get("colis"), dict) else nested
-    for key in ("code", "tracking", "tracking_code", "trackingCode", "num_colis", "numColis", "reference", "ref"):
-        value = colis.get(key) or nested.get(key) or payload.get(key)
-        if value:
-            return str(value).strip()
+        return []
+    layers: list[dict[str, Any]] = [payload]
+    for key in ("data", "colis", "result", "parcel", "package"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            layers.append(nested)
+            inner = nested.get("colis")
+            if isinstance(inner, dict):
+                layers.append(inner)
+    return layers
+
+
+def _pick_code(payload: Any, fallback: str = "") -> str:
+    keys = (
+        "code",
+        "tracking_number",
+        "trackingNumber",
+        "tracking",
+        "tracking_code",
+        "trackingCode",
+        "num_colis",
+        "numColis",
+        "reference",
+        "ref",
+    )
+    for layer in _payload_layers(payload):
+        for key in keys:
+            value = layer.get(key)
+            if value not in (None, ""):
+                text = str(value).strip()
+                if text:
+                    return text
     return fallback
+
+
+def _as_ticket_url(value: Any, base: str = "") -> str:
+    if isinstance(value, dict):
+        for key in ("url", "href", "link", "etiquette", "pdf", "ticket_url"):
+            found = _as_ticket_url(value.get(key), base)
+            if found:
+                return found
+        return ""
+    text = str(value or "").strip()
+    if not text or text.lower() in {"true", "false", "none", "null"}:
+        return ""
+    if text.startswith("/"):
+        root = base.rstrip("/")
+        return f"{root}{text}" if root else text
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    return ""
+
+
+def _pick_ticket_url(payload: Any, base: str = "") -> str:
+    keys = (
+        "etiquette",
+        "etiquette_url",
+        "url_etiquette",
+        "lien_etiquette",
+        "ticket_url",
+        "ticketUrl",
+        "label_url",
+        "labelUrl",
+        "pdf_url",
+        "pdfUrl",
+        "pdf",
+        "ticket",
+        "label",
+    )
+    for layer in _payload_layers(payload):
+        for key in keys:
+            found = _as_ticket_url(layer.get(key), base)
+            if found:
+                return found
+    return ""
 
 
 def _meta_detail(res: httpx.Response) -> Any:
@@ -231,7 +298,7 @@ def create_colis(
     raw_base = _clean(base_url) or live_env("META_LIVRAISON_BASE_URL", DEFAULT_BASE)
     debug_credentials(key, secret, raw_base)
     if not configured(key, secret):
-        return {"ok": False, "status": 400, "detail": "meta_livraison_not_configured", "code": "", "text": ""}
+        return {"ok": False, "status": 400, "detail": "meta_livraison_not_configured", "code": "", "ticket_url": "", "text": ""}
 
     phone = _national_phone(str(getattr(order, "phone", "") or ""), str(getattr(order, "phone_national", "") or ""))
     if not (len(phone) == 10 and phone.startswith("0")):
@@ -240,6 +307,7 @@ def create_colis(
             "status": 400,
             "detail": {"phone": "must be 10 digits starting with 0", "value": phone},
             "code": "",
+            "ticket_url": "",
             "text": f"invalid phone: {phone}",
         }
 
@@ -270,15 +338,22 @@ def create_colis(
                 "status": res.status_code,
                 "detail": detail,
                 "code": code,
+                "ticket_url": "",
                 "text": res.text,
             }
+        parsed = detail if isinstance(detail, dict) else {}
+        tracking = _pick_code(parsed, code)
+        ticket = _pick_ticket_url(parsed, base_url(raw_base))
+        print("[META_LIVRAISON_TRACKING]", tracking, flush=True)
+        print("[META_LIVRAISON_TICKET_URL]", ticket, flush=True)
         return {
             "ok": True,
             "status": res.status_code,
             "detail": detail,
-            "code": _pick_code(detail if isinstance(detail, dict) else {}, code),
+            "code": tracking,
+            "ticket_url": ticket,
             "text": res.text,
         }
     except Exception as err:
         traceback.print_exc()
-        return {"ok": False, "status": 500, "detail": str(err), "code": "", "text": str(err)}
+        return {"ok": False, "status": 500, "detail": str(err), "code": "", "ticket_url": "", "text": str(err)}

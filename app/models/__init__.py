@@ -68,6 +68,7 @@ class Order(SQLModel, table=True):
     cancelled_at: datetime | None = Field(default=None)
     meta_livraison_code: str | None = Field(default=None, max_length=80)
     meta_livraison_sent_at: datetime | None = Field(default=None)
+    meta_livraison_ticket_url: str | None = Field(default=None)
 
     items: list["OrderItem"] = Relationship(back_populates="order")
 

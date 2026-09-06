@@ -168,6 +168,7 @@ def _serialize_order(order: Order) -> dict:
         "cancelled_at": _iso(getattr(order, "cancelled_at", None)),
         "meta_livraison_code": getattr(order, "meta_livraison_code", None),
         "meta_livraison_sent_at": _iso(getattr(order, "meta_livraison_sent_at", None)),
+        "meta_livraison_ticket_url": getattr(order, "meta_livraison_ticket_url", None),
     }
 
 
@@ -751,9 +752,11 @@ async def admin_send_livraison(order_id: str, request: Request):
                 )
 
             cols = _order_column_names(session)
-            code = str(result.get("code") or str(order.id).replace("-", "")[:8]).upper()
+            code = str(result.get("code") or "").strip() or str(order.id).replace("-", "")[:8].upper()
+            ticket_url = str(result.get("ticket_url") or "").strip() or None
             now = datetime.now(timezone.utc)
             _assign(order, cols, "meta_livraison_code", code)
+            _assign(order, cols, "meta_livraison_ticket_url", ticket_url)
             _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
             _assign(order, cols, "status", "shipped")
             _stamp_status(order, "shipped", cols)
