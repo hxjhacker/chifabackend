@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import traceback
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -687,19 +689,23 @@ def admin_send_livraison(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     session: Session = Depends(get_session),
 ):
-    import traceback
-
     try:
+        import traceback
+
         try:
             get_current_admin(request, creds)
         except HTTPException as exc:
-            if exc.status_code == 401:
-                print("401 details:", {"origin": "admin_session", "error": exc.detail})
-                return JSONResponse(
-                    {"success": False, "message": "جلسة الأدمن غير صالحة. أعد تسجيل الدخول.", "origin": "admin_session"},
-                    status_code=401,
-                )
-            raise
+            print("401 details:" if exc.status_code == 401 else "admin auth error:", exc.detail)
+            traceback.print_exc()
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": "جلسة الأدمن غير صالحة. أعد تسجيل الدخول." if exc.status_code == 401 else str(exc.detail),
+                    "origin": "admin_session",
+                    "error": str(exc.detail),
+                },
+                status_code=exc.status_code,
+            )
 
         import os
 
@@ -724,12 +730,12 @@ def admin_send_livraison(
             )
         order = _load_order(session, order_id)
         if not order:
-            return JSONResponse({"success": False, "detail": "order_not_found"}, status_code=404)
-        if _display_status(str(order.status or "")) == "cancelled":
+            raise HTTPException(status_code=404, detail="order_not_found")
+        if _display_status(str(getattr(order, "status", "") or "")) == "cancelled":
             return JSONResponse({"success": False, "detail": "cannot_ship_cancelled"}, status_code=400)
         existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
         if existing:
-            return {**_serialize_order(order), "success": True}
+            return JSONResponse({**_serialize_order(order), "success": True})
         if not _has_complete_confirm_details(order):
             return JSONResponse({"success": False, "detail": "confirmation_details_required"}, status_code=400)
 
@@ -737,12 +743,14 @@ def admin_send_livraison(
         if not result.get("ok"):
             return JSONResponse(
                 status_code=400,
-                content={
-                    "success": False,
-                    "origin": "meta_livraison",
-                    "status_code": int(result.get("status") or 400),
-                    "detail": result.get("detail") if result.get("detail") not in (None, "") else result.get("text"),
-                },
+                content=jsonable_encoder(
+                    {
+                        "success": False,
+                        "origin": "meta_livraison",
+                        "status_code": int(result.get("status") or 400),
+                        "detail": result.get("detail") if result.get("detail") not in (None, "") else result.get("text"),
+                    }
+                ),
             )
 
         cols = _order_column_names(session)
@@ -756,11 +764,18 @@ def admin_send_livraison(
         session.add(order)
         session.commit()
         session.refresh(order)
-        return {**_serialize_order(order), "success": True}
+        return JSONResponse({**_serialize_order(order), "success": True})
+    except HTTPException:
+        raise
     except Exception as e:
+        import traceback
+
         traceback.print_exc()
         try:
             session.rollback()
         except Exception:
             pass
-        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "traceback": traceback.format_exc()},
+        )

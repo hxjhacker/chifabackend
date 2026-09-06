@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+import traceback
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlmodel import SQLModel, Session
 
 from app.api.cities import router as cities_router
@@ -42,3 +44,19 @@ app.include_router(cities_router)
 app.include_router(orders_router)
 app.include_router(tracking_router)
 app.include_router(admin_router)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    traceback.print_exc()
+    print("UNHANDLED EXCEPTION:", type(exc).__name__, repr(exc), "path=", request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+            "traceback": traceback.format_exc(),
+            "path": str(request.url.path),
+        },
+    )
