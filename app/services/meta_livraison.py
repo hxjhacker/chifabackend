@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import time
 import traceback
 from typing import Any
 
@@ -89,7 +88,62 @@ def _national_phone(phone: str, phone_national: str) -> str:
 
 
 def parcel_code(order_id: str) -> str:
-    return f"ORD-{str(order_id)[:8]}-{int(time.time())}"
+    return f"ORD-{order_id}"
+
+
+def _text(*values: Any, fallback: str = "") -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return fallback
+
+
+def build_payload(order: Any, phone: str) -> dict[str, Any]:
+    destinataire = _text(
+        getattr(order, "full_name", None),
+        getattr(order, "customer_name", None),
+        getattr(order, "name", None),
+        fallback="Client",
+    )
+    raw_price = float(getattr(order, "total_cents", 0) or 0) / 100
+    price: int | float = int(raw_price) if raw_price.is_integer() else round(raw_price, 2)
+    ville = _text(getattr(order, "city", None), fallback="")
+    address = _text(getattr(order, "address", None), ville, fallback="Centre Ville")
+    slug = _text(getattr(order, "product_slug", None))
+    marchendise = _text(PACK_NAMES.get(slug, slug), fallback="Produit")
+    quantity = int(getattr(order, "tier_qty", None) or getattr(order, "quantity", None) or 1)
+    if quantity < 1:
+        quantity = 1
+    code = parcel_code(str(getattr(order, "id", "") or "ORDER"))
+    note = _text(getattr(order, "courier_notes", None))
+    return {
+        "destinataire": destinataire,
+        "colisStock": False,
+        "canOpen": True,
+        "replaceColis": False,
+        "phone": phone,
+        "ville": ville,
+        "address": address,
+        "price": price,
+        "code": code,
+        "marchendise": marchendise,
+        "quantity": quantity,
+        "reference": code,
+        "nom": destinataire,
+        "fullname": destinataire,
+        "telephone": phone,
+        "city": ville,
+        "adresse": address,
+        "prix": price,
+        "crbt": price,
+        "produit": marchendise,
+        "product": marchendise,
+        "commentaire": note,
+        "note": note,
+        "ouverture": True,
+        "openpackage": True,
+    }
 
 
 def _pick_code(payload: Any, fallback: str = "") -> str:
@@ -138,37 +192,8 @@ def create_colis(
             "text": f"invalid phone: {phone}",
         }
 
-    raw_price = float(getattr(order, "total_cents", 0) or 0) / 100
-    price: int | float = int(raw_price) if raw_price.is_integer() else round(raw_price, 2)
-    ville = str(getattr(order, "city", "") or "").strip()
-    address = str(getattr(order, "address", "") or ville).strip()
-    slug = str(getattr(order, "product_slug", "") or "").strip()
-    pack = PACK_NAMES.get(slug, slug)
-    qty = int(getattr(order, "tier_qty", 1) or 1)
-    if qty > 1:
-        pack = f"{pack} × {qty}"
-    code = parcel_code(str(getattr(order, "id", "")))
-    body = {
-        "code": code,
-        "reference": code,
-        "nom": str(getattr(order, "full_name", "") or "").strip(),
-        "fullname": str(getattr(order, "full_name", "") or "").strip(),
-        "telephone": phone,
-        "phone": phone,
-        "ville": ville,
-        "city": ville,
-        "adresse": address,
-        "address": address,
-        "prix": price,
-        "price": price,
-        "crbt": price,
-        "produit": pack,
-        "product": pack,
-        "commentaire": str(getattr(order, "courier_notes", None) or "").strip(),
-        "note": str(getattr(order, "courier_notes", None) or "").strip(),
-        "ouverture": 1,
-        "openpackage": 1,
-    }
+    payload = build_payload(order, phone)
+    code = str(payload["code"])
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -177,12 +202,13 @@ def create_colis(
     }
     post_url = colis_url(raw_base)
     print(f"[DEBUG META LIVRAISON] sending POST {post_url}")
+    print(f"[DEBUG META LIVRAISON] payload: {payload}")
     print(f"[DEBUG META LIVRAISON] sending header names: {list(headers.keys())}")
     print(f"[DEBUG META LIVRAISON] sending key prefix: {key[:6]}..., len={len(key)}")
     print(f"[DEBUG META LIVRAISON] sending secret prefix: {secret[:6]}..., len={len(secret)}")
     try:
         with httpx.Client(timeout=15.0) as client:
-            res = client.post(post_url, json=body, headers=headers)
+            res = client.post(post_url, json=payload, headers=headers)
         print("STATUS FROM META:", res.status_code)
         print("RAW BODY FROM META:", res.text)
         detail = _meta_detail(res)
