@@ -500,14 +500,6 @@ def admin_create_order(
     city = str(body.get("city") or "").strip()[:80]
     if len(city) < 2:
         raise HTTPException(status_code=422, detail="invalid_city")
-    try:
-        from app.services.cities import find_city
-
-        hit = find_city(city)
-        if hit and hit.get("ar"):
-            city = str(hit["ar"])[:80]
-    except Exception:
-        pass
     status_value = str(body.get("status") or "confirmed")
     if status_value not in ALLOWED_STATUSES:
         raise HTTPException(status_code=422, detail="invalid_status")

@@ -9,7 +9,6 @@ from app.dependencies import get_current_admin
 from app.models import Order, OrderItem, Product
 from app.schemas import OrderCreate, UpsellCreate
 from app.services.capi import purchase_event_id, send_purchase
-from app.services.cities import find_city
 from app.services.fraud import ip_is_blocked
 from app.services.phone import normalize_ma_phone, to_national
 from app.services.pricing import (
@@ -109,8 +108,8 @@ def create_order(
     except ValueError:
         raise HTTPException(status_code=422, detail="invalid_ma_phone")
 
-    city = find_city(payload.city)
-    if not city:
+    customer_city_raw = payload.city.strip()
+    if len(customer_city_raw) < 2:
         raise HTTPException(status_code=422, detail="invalid_city")
 
     if payload.tier_qty not in TIER_PRICE_CENTS:
@@ -139,7 +138,7 @@ def create_order(
         full_name=payload.full_name.strip(),
         phone=e164,
         phone_national=to_national(e164),
-        city=str(city["ar"]),
+        city=customer_city_raw,
         product_slug=payload.product_slug,
         tier_qty=payload.tier_qty,
         tier_price_cents=tier_cents,
