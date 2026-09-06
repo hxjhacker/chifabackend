@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import traceback
 from typing import Any
 
@@ -106,6 +107,35 @@ def latin_city(raw: str) -> str:
     return latin_ville(raw)
 
 
+_HUB_SUFFIX = re.compile(
+    r"\s*-\s*(FES|MEKNES|Beni Mellal|Beni-Mellal|Ouazzane|Nador|Taounate|Taza|Sefrou|"
+    r"Chefchaouen|Casa|Agadir|Marrakech|Errachidia|Khenifra|Tiznit|SAFI|El jadida|"
+    r"Had soualem|TAN TAN|SEFROU)$",
+    flags=re.IGNORECASE,
+)
+
+
+def sanitize_meta_city_name(city_name: str) -> str:
+    if not city_name:
+        return "FES"
+    lower = city_name.lower()
+    if "imouzzer" in lower and "marmoucha" in lower:
+        return "Imouzzer Marmoucha"
+    if "imouzzer" in lower:
+        return "Imouzzer Kandar"
+    cleaned = _HUB_SUFFIX.sub("", city_name)
+    if " - " in cleaned:
+        cleaned = cleaned.split(" - ", 1)[0]
+    cleaned = cleaned.replace("-", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or "FES"
+
+
+def sanitize_meta_address(address: str) -> str:
+    text = re.sub(r"\s+", " ", (address or "").replace("\u202c", "")).strip(" -")
+    return text or "Centre Ville"
+
+
 def _append_locality(address: str, locality: str, ville: str) -> str:
     loc = (locality or "").strip()
     addr = (address or "").strip()
@@ -133,8 +163,13 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
     )
     ville = latin_ville(shipping_city, raw_city)
     unmapped = (not is_official_meta_city(raw_city)) or has_arabic(raw_city)
+    if has_arabic(ville) or not is_official_meta_city(ville):
+        ville = FALLBACK_VILLE
+    official_ville = ville
+    ville = sanitize_meta_city_name(ville)
     print(
-        f"[META_LIVRAISON_CITY] raw={raw_city!r} shipping={shipping_city!r} resolved={ville!r} unmapped={unmapped}",
+        f"[META_LIVRAISON_CITY] raw={raw_city!r} shipping={shipping_city!r} "
+        f"official={official_ville!r} sent={ville!r} unmapped={unmapped}",
         flush=True,
     )
     raw_address = _text(getattr(order, "address", None), fallback="")
@@ -144,8 +179,7 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
         address = raw_address
     if unmapped:
         address = _append_locality(address, raw_city, ville)
-    if has_arabic(ville) or not is_official_meta_city(ville):
-        ville = FALLBACK_VILLE
+    address = sanitize_meta_address(address)
     slug = _text(getattr(order, "product_slug", None))
     marchendise = _text(PACK_NAMES.get(slug, slug), fallback="Produit")
     quantity = int(getattr(order, "tier_qty", None) or getattr(order, "quantity", None) or 1)
