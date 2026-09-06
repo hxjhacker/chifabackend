@@ -7,8 +7,6 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
-
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE", "YOUR_API_SECRET_HERE"}
 DEFAULT_BASE = "https://api.metalivraison.ma/colis-service"
 COLIS_PATH = "/api/v1/partner/colis"
@@ -25,54 +23,59 @@ def _clean(value: str | None) -> str:
     return text
 
 
-def _os_env(name: str, fallback: str = "") -> str:
-    return _clean(os.getenv(name, "") or fallback)
+def live_env(name: str, fallback: str = "") -> str:
+    """Read process env at call time. Never uses pydantic Settings."""
+    direct = os.getenv(name)
+    if direct is None:
+        direct = os.environ.get(name)
+    if not direct:
+        wanted = name.casefold()
+        for key, value in os.environ.items():
+            if key.casefold() == wanted:
+                direct = value
+                break
+    return _clean(direct if direct is not None else fallback)
 
 
 def api_key() -> str:
-    return _os_env("META_LIVRAISON_API_KEY") or _clean(settings.meta_livraison_api_key)
+    return live_env("META_LIVRAISON_API_KEY")
 
 
 def api_secret() -> str:
-    return _os_env("META_LIVRAISON_API_SECRET") or _clean(settings.meta_livraison_api_secret)
+    return live_env("META_LIVRAISON_API_SECRET")
 
 
-def base_url() -> str:
-    raw = _os_env("META_LIVRAISON_BASE_URL") or _clean(settings.meta_livraison_base_url) or DEFAULT_BASE
+def base_url(override: str | None = None) -> str:
+    raw = _clean(override) or live_env("META_LIVRAISON_BASE_URL", DEFAULT_BASE)
     return raw.rstrip("/")
 
 
-def configured() -> bool:
-    key = api_key()
-    secret = api_secret()
+def configured(key: str | None = None, secret: str | None = None) -> bool:
+    key = _clean(key) or api_key()
+    secret = _clean(secret) or api_secret()
     return bool(key and secret and key not in EMPTY_KEYS and secret not in EMPTY_KEYS)
 
 
-def colis_url() -> str:
-    base = base_url()
-    if base.endswith(COLIS_PATH):
-        return base
-    if base.endswith("/colis-service"):
+def colis_url(override: str | None = None) -> str:
+    base = base_url(override)
+    if base.endswith(COLIS_PATH) or base.endswith("/colis-service"):
         return base
     return f"{base}{COLIS_PATH}"
 
 
-def debug_credentials() -> None:
-    key = _os_env("META_LIVRAISON_API_KEY")
-    secret = _os_env("META_LIVRAISON_API_SECRET")
-    raw_base = os.getenv("META_LIVRAISON_BASE_URL", DEFAULT_BASE)
+def debug_credentials(key: str = "", secret: str = "", base: str = "") -> None:
+    key = _clean(key) or api_key()
+    secret = _clean(secret) or api_secret()
+    raw_base = base or live_env("META_LIVRAISON_BASE_URL", DEFAULT_BASE)
     names = sorted(k for k in os.environ if "LIVRAISON" in k.upper() or k.startswith("META_"))
-    print(f"[DEBUG META LIVRAISON] Base URL: {raw_base.rstrip('/') if isinstance(raw_base, str) else raw_base}")
+    print(f"[DEBUG META LIVRAISON] Base URL: {raw_base.rstrip('/')}")
     print(f"[DEBUG META LIVRAISON] Key length: {len(key)}, Key prefix: {key[:6]}...")
     print(f"[DEBUG META LIVRAISON] Secret length: {len(secret)}, Secret prefix: {secret[:6]}...")
-    print(f"[DEBUG META LIVRAISON] POST URL: {colis_url()}")
+    print(f"[DEBUG META LIVRAISON] POST URL: {colis_url(raw_base)}")
     print(f"[DEBUG META LIVRAISON] os.environ names: {names}")
-    print(
-        "[DEBUG META LIVRAISON] settings fallback "
-        f"key_len={len(_clean(settings.meta_livraison_api_key))} "
-        f"secret_len={len(_clean(settings.meta_livraison_api_secret))} "
-        f"base={settings.meta_livraison_base_url!r}"
-    )
+    print(f"[DEBUG META LIVRAISON] getenv is None: key={os.getenv('META_LIVRAISON_API_KEY') is None} secret={os.getenv('META_LIVRAISON_API_SECRET') is None}")
+    print(f"[DEBUG META LIVRAISON] in os.environ: key={'META_LIVRAISON_API_KEY' in os.environ} secret={'META_LIVRAISON_API_SECRET' in os.environ}")
+
 
 def _national_phone(phone: str, phone_national: str) -> str:
     digits = "".join(ch for ch in (phone_national or phone or "") if ch.isdigit())
@@ -111,11 +114,18 @@ def _meta_detail(res: httpx.Response) -> Any:
     return res.text
 
 
-def create_colis(order: Any) -> dict[str, Any]:
-    debug_credentials()
-    key = api_key()
-    secret = api_secret()
-    if not configured():
+def create_colis(
+    order: Any,
+    *,
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    key = _clean(api_key) or live_env("META_LIVRAISON_API_KEY")
+    secret = _clean(api_secret) or live_env("META_LIVRAISON_API_SECRET")
+    raw_base = _clean(base_url) or live_env("META_LIVRAISON_BASE_URL", DEFAULT_BASE)
+    debug_credentials(key, secret, raw_base)
+    if not configured(key, secret):
         return {"ok": False, "status": 400, "detail": "meta_livraison_not_configured", "code": "", "text": ""}
 
     phone = _national_phone(str(getattr(order, "phone", "") or ""), str(getattr(order, "phone_national", "") or ""))
@@ -165,7 +175,7 @@ def create_colis(order: Any) -> dict[str, Any]:
         "X-API-Key": key,
         "X-API-Secret": secret,
     }
-    post_url = colis_url()
+    post_url = colis_url(raw_base)
     print(f"[DEBUG META LIVRAISON] sending POST {post_url}")
     print(f"[DEBUG META LIVRAISON] sending header names: {list(headers.keys())}")
     print(f"[DEBUG META LIVRAISON] sending key prefix: {key[:6]}..., len={len(key)}")

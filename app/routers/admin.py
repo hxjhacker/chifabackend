@@ -705,15 +705,19 @@ def admin_send_livraison(
 
         from app.services.meta_livraison import configured, create_colis, debug_credentials
 
-        api_key = os.getenv("META_LIVRAISON_API_KEY", "").strip()
-        api_secret = os.getenv("META_LIVRAISON_API_SECRET", "").strip()
-        base_url = os.getenv("META_LIVRAISON_BASE_URL", "https://api.metalivraison.ma/colis-service").rstrip("/")
+        api_key = (os.getenv("META_LIVRAISON_API_KEY") or os.environ.get("META_LIVRAISON_API_KEY") or "").strip()
+        api_secret = (os.getenv("META_LIVRAISON_API_SECRET") or os.environ.get("META_LIVRAISON_API_SECRET") or "").strip()
+        base_url = (
+            os.getenv("META_LIVRAISON_BASE_URL")
+            or os.environ.get("META_LIVRAISON_BASE_URL")
+            or "https://api.metalivraison.ma/colis-service"
+        ).rstrip("/")
         print(f"[DEBUG META LIVRAISON] Base URL: {base_url}")
         print(f"[DEBUG META LIVRAISON] Key length: {len(api_key)}, Key prefix: {api_key[:6]}...")
         print(f"[DEBUG META LIVRAISON] Secret length: {len(api_secret)}, Secret prefix: {api_secret[:6]}...")
-        debug_credentials()
+        debug_credentials(api_key, api_secret, base_url)
 
-        if not configured():
+        if not configured(api_key, api_secret):
             return JSONResponse(
                 {"success": False, "detail": "META_LIVRAISON_API_KEY or META_LIVRAISON_API_SECRET is missing"},
                 status_code=400,
@@ -729,7 +733,7 @@ def admin_send_livraison(
         if not _has_complete_confirm_details(order):
             return JSONResponse({"success": False, "detail": "confirmation_details_required"}, status_code=400)
 
-        result = create_colis(order)
+        result = create_colis(order, api_key=api_key, api_secret=api_secret, base_url=base_url)
         if not result.get("ok"):
             return JSONResponse(
                 status_code=400,
