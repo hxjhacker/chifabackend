@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import traceback
 from typing import Any
@@ -116,7 +117,6 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
     if quantity < 1:
         quantity = 1
     code = parcel_code(str(getattr(order, "id", "") or "ORDER"))
-    note = _text(getattr(order, "courier_notes", None))
     return {
         "destinataire": destinataire,
         "colisStock": False,
@@ -129,20 +129,6 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
         "code": code,
         "marchendise": marchendise,
         "quantity": quantity,
-        "reference": code,
-        "nom": destinataire,
-        "fullname": destinataire,
-        "telephone": phone,
-        "city": ville,
-        "adresse": address,
-        "prix": price,
-        "crbt": price,
-        "produit": marchendise,
-        "product": marchendise,
-        "commentaire": note,
-        "note": note,
-        "ouverture": True,
-        "openpackage": True,
     }
 
 
@@ -201,11 +187,12 @@ def create_colis(
         "X-API-Secret": secret,
     }
     post_url = colis_url(raw_base)
-    print(f"[DEBUG META LIVRAISON] sending POST {post_url}")
-    print(f"[DEBUG META LIVRAISON] payload: {payload}")
-    print(f"[DEBUG META LIVRAISON] sending header names: {list(headers.keys())}")
-    print(f"[DEBUG META LIVRAISON] sending key prefix: {key[:6]}..., len={len(key)}")
-    print(f"[DEBUG META LIVRAISON] sending secret prefix: {secret[:6]}..., len={len(secret)}")
+    print("[META_LIVRAISON_REQUEST_PAYLOAD]", payload, flush=True)
+    print("[META_LIVRAISON_REQUEST_JSON]", json.dumps(payload, ensure_ascii=False), flush=True)
+    print(f"[DEBUG META LIVRAISON] sending POST {post_url}", flush=True)
+    print(f"[DEBUG META LIVRAISON] sending header names: {list(headers.keys())}", flush=True)
+    print(f"[DEBUG META LIVRAISON] sending key prefix: {key[:6]}..., len={len(key)}", flush=True)
+    print(f"[DEBUG META LIVRAISON] sending secret prefix: {secret[:6]}..., len={len(secret)}", flush=True)
     try:
         with httpx.Client(timeout=15.0) as client:
             res = client.post(post_url, json=payload, headers=headers)
