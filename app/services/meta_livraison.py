@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from app.services.meta_livraison_cities import resolve_meta_city
+from app.services.meta_livraison_cities import FALLBACK_VILLE, has_arabic, is_official_meta_city, latin_ville
 
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE", "YOUR_API_SECRET_HERE"}
 DEFAULT_BASE = "https://api.metalivraison.ma/colis-service"
@@ -103,7 +103,17 @@ def _text(*values: Any, fallback: str = "") -> str:
 
 
 def latin_city(raw: str) -> str:
-    return resolve_meta_city(raw)
+    return latin_ville(raw)
+
+
+def _append_locality(address: str, locality: str, ville: str) -> str:
+    loc = (locality or "").strip()
+    addr = (address or "").strip()
+    if not loc or loc == ville or loc in addr:
+        return addr or ville or "Centre Ville"
+    if not addr or addr == ville:
+        return f"{ville} - {loc}" if ville else loc
+    return f"{addr} - {loc}"
 
 
 def build_payload(order: Any, phone: str) -> dict[str, Any]:
@@ -116,13 +126,26 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
     raw_price = float(getattr(order, "total_cents", 0) or 0) / 100
     price: int | float = int(raw_price) if raw_price.is_integer() else round(raw_price, 2)
     raw_city = _text(getattr(order, "city", None), fallback="")
-    ville = resolve_meta_city(raw_city)
-    print(f"[META_LIVRAISON_CITY] raw={raw_city!r} resolved={ville!r}", flush=True)
+    shipping_city = _text(
+        getattr(order, "shipping_city", None),
+        getattr(order, "meta_city", None),
+        fallback="",
+    )
+    ville = latin_ville(shipping_city, raw_city)
+    unmapped = (not is_official_meta_city(raw_city)) or has_arabic(raw_city)
+    print(
+        f"[META_LIVRAISON_CITY] raw={raw_city!r} shipping={shipping_city!r} resolved={ville!r} unmapped={unmapped}",
+        flush=True,
+    )
     raw_address = _text(getattr(order, "address", None), fallback="")
     if not raw_address or raw_address == raw_city:
         address = ville or "Centre Ville"
     else:
         address = raw_address
+    if unmapped:
+        address = _append_locality(address, raw_city, ville)
+    if has_arabic(ville) or not is_official_meta_city(ville):
+        ville = FALLBACK_VILLE
     slug = _text(getattr(order, "product_slug", None))
     marchendise = _text(PACK_NAMES.get(slug, slug), fallback="Produit")
     quantity = int(getattr(order, "tier_qty", None) or getattr(order, "quantity", None) or 1)

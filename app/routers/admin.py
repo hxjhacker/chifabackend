@@ -131,6 +131,7 @@ def _serialize_order(order: Order) -> dict:
         "created_at": _iso(order.created_at),
         "full_name": order.full_name,
         "city": order.city,
+        "shipping_city": getattr(order, "shipping_city", None),
         "phone": order.phone,
         "phone_national": order.phone_national,
         "product_slug": order.product_slug,
@@ -279,6 +280,9 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
         _assign(order, known, "full_name", name)
     if "city" in data and data["city"]:
         _assign(order, known, "city", str(data["city"]).strip()[:120])
+    if "shipping_city" in data:
+        shipping = str(data["shipping_city"] or "").strip()[:160] or None
+        _assign(order, known, "shipping_city", shipping)
     if "product_slug" in data and data["product_slug"]:
         _assign(order, known, "product_slug", str(data["product_slug"]))
     if "tier_qty" in data and data["tier_qty"]:

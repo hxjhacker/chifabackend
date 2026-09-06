@@ -34,6 +34,7 @@ ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_code varchar(80)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_sent_at timestamptz",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_ticket_url text",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_city varchar(160)",
 )
 
 PAGE_VIEWS_SQL = (

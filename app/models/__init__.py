@@ -29,6 +29,7 @@ class Order(SQLModel, table=True):
     phone: str = Field(max_length=20, index=True)
     phone_national: str = Field(max_length=20, default="")
     city: str = Field(max_length=80)
+    shipping_city: str | None = Field(default=None, max_length=160)
     address: str | None = Field(default=None)
     quartier: str | None = Field(default=None, max_length=120)
     street: str | None = Field(default=None, max_length=160)

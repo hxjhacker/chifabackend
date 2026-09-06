@@ -263,6 +263,23 @@ CITY_ALIASES = {
     "السمارة": "Smara",
     "boujdour": "Boujdour",
     "بوجدور": "Boujdour",
+    "إيموزار كندر": "Imouzzer-Kandar - FES",
+    "ايموزار كندر": "Imouzzer-Kandar - FES",
+    "إيموزار كندار": "Imouzzer-Kandar - FES",
+    "ايموزار كندار": "Imouzzer-Kandar - FES",
+    "إيموزار-كندر": "Imouzzer-Kandar - FES",
+    "ايموزار-كندر": "Imouzzer-Kandar - FES",
+    "imouzzer kandar": "Imouzzer-Kandar - FES",
+    "imouzzer-kandar": "Imouzzer-Kandar - FES",
+    "imouzar kandar": "Imouzzer-Kandar - FES",
+    "imouzzer kender": "Imouzzer-Kandar - FES",
+    "أولاد الطيب": "Oulad Tayeb - FES",
+    "اولاد الطيب": "Oulad Tayeb - FES",
+    "دويات": "Douiyat - FES",
+    "عين الشقف": "Ain Chkef - FES",
+    "بهاليل": "Bhalil",
+    "إيموزار مرموشة": "Imouzzer Marmoucha",
+    "ايموزار مرموشة": "Imouzzer Marmoucha",
 }
 
 
@@ -270,15 +287,60 @@ _AR_DIAC = re.compile(r"[\u064B-\u065F\u0670\u0640]")
 _NON_WORD = re.compile(r"[^a-z0-9\u0600-\u06ff]+")
 _SPACES = re.compile(r"\s+")
 _LATIN_ARTICLE = re.compile(r"\b(?:al|el|le|la|les|the|l)\b")
+_VOWELS = re.compile(r"[aeiouy]")
+_ARABIC_CHAR = re.compile(r"[\u0600-\u06ff]")
+_AR_TO_LATIN = {
+    "ا": "a",
+    "ب": "b",
+    "ت": "t",
+    "ث": "t",
+    "ج": "j",
+    "ح": "h",
+    "خ": "kh",
+    "د": "d",
+    "ذ": "d",
+    "ر": "r",
+    "ز": "z",
+    "س": "s",
+    "ش": "ch",
+    "ص": "s",
+    "ض": "d",
+    "ط": "t",
+    "ظ": "z",
+    "ع": "a",
+    "غ": "gh",
+    "ف": "f",
+    "ق": "q",
+    "ك": "k",
+    "ل": "l",
+    "م": "m",
+    "ن": "n",
+    "ه": "h",
+    "و": "ou",
+    "ي": "i",
+    "ء": "",
+}
+
+
+def normalize_arabic_text(text: str) -> str:
+    if not text:
+        return ""
+    s = text.strip()
+    for a in ["إ", "أ", "آ", "ٱ"]:
+        s = s.replace(a, "ا")
+    s = s.replace("ى", "ي").replace("ة", "ه")
+    s = re.sub(r"[\u064B-\u065F\u0670]", "", s)
+    s = re.sub(r"\s+", " ", s)
+    return s.lower()
 
 
 def fold_city(text: str) -> str:
     value = (text or "").replace("\u202c", "").replace("\u200f", "").replace("\u200e", "").replace("\ufeff", "")
+    value = normalize_arabic_text(value)
     value = unicodedata.normalize("NFKD", value)
     value = "".join(ch for ch in value if not unicodedata.combining(ch))
     value = _AR_DIAC.sub("", value)
-    value = value.replace("أ", "ا").replace("إ", "ا").replace("آ", "ا").replace("ٱ", "ا")
-    value = value.replace("ى", "ي").replace("ة", "ه").replace("ؤ", "و").replace("ئ", "ي")
+    value = value.replace("ؤ", "و").replace("ئ", "ي")
     value = value.casefold()
     value = _LATIN_ARTICLE.sub(" ", value)
     if value.startswith("ال"):
@@ -290,9 +352,40 @@ def fold_city(text: str) -> str:
     return _SPACES.sub(" ", value).strip()
 
 
-def _index_official() -> tuple[dict[str, str], list[str]]:
+def romanize_arabic(text: str) -> str:
+    value = fold_city(text)
+    if not value:
+        return ""
+    if not _ARABIC_CHAR.search(value):
+        return value
+    if value.startswith("اي"):
+        value = "i" + value[2:]
+    chars: list[str] = []
+    for ch in value:
+        if ch == " ":
+            chars.append(" ")
+        elif ch in _AR_TO_LATIN:
+            chars.append(_AR_TO_LATIN[ch])
+        elif "a" <= ch <= "z" or ch.isdigit():
+            chars.append(ch)
+    return _SPACES.sub(" ", "".join(chars)).strip()
+
+
+def _skeleton(text: str) -> str:
+    compact = text.replace(" ", "")
+    compact = _VOWELS.sub("", compact)
+    return re.sub(r"(.)\1+", r"\1", compact)
+
+
+def _token_skeletons(text: str) -> tuple[str, ...]:
+    return tuple(skel for tok in text.split() if (skel := _skeleton(tok)))
+
+
+def _index_official() -> tuple[dict[str, str], list[str], dict[str, str], list[tuple[str, tuple[str, ...]]]]:
     folded: dict[str, str] = {}
     keys: list[str] = []
+    arabic_norm: dict[str, str] = {}
+    token_index: list[tuple[str, tuple[str, ...]]] = []
     for official in OFFICIAL_META_CITIES:
         variants = [official, official.split(" - ", 1)[0], official.split(",", 1)[0]]
         for variant in variants:
@@ -302,16 +395,23 @@ def _index_official() -> tuple[dict[str, str], list[str]]:
             folded.setdefault(key, official)
             if key not in keys:
                 keys.append(key)
+        latin = fold_city(official.split(" - ", 1)[0])
+        tokens = _token_skeletons(latin)
+        if tokens:
+            token_index.append((official, tokens))
     for alias, official in CITY_ALIASES.items():
         key = fold_city(alias)
         if key:
             folded[key] = official
             if key not in keys:
                 keys.append(key)
-    return folded, keys
+        ar_key = normalize_arabic_text(alias)
+        if ar_key:
+            arabic_norm[ar_key] = official
+    return folded, keys, arabic_norm, token_index
 
 
-_FOLD_TO_OFFICIAL, _FOLD_KEYS = _index_official()
+_FOLD_TO_OFFICIAL, _FOLD_KEYS, _ARABIC_NORM_TO_OFFICIAL, _OFFICIAL_TOKEN_SKELS = _index_official()
 _COMPACT_TO_OFFICIAL = {
     key.replace(" ", ""): official
     for key, official in _FOLD_TO_OFFICIAL.items()
@@ -319,31 +419,109 @@ _COMPACT_TO_OFFICIAL = {
 }
 
 
-def resolve_meta_city(raw: str) -> str:
-    original = " ".join((raw or "").split())
-    if not original:
-        return ""
-    folded = fold_city(original)
+def _lookup_folded(folded: str) -> str:
     if not folded:
-        return original
-
+        return ""
     exact = _FOLD_TO_OFFICIAL.get(folded)
     if exact:
         return exact
-
     compact = folded.replace(" ", "")
     compact_hit = _COMPACT_TO_OFFICIAL.get(compact)
     if compact_hit:
         return compact_hit
-
     close = get_close_matches(folded, _FOLD_KEYS, n=1, cutoff=0.78)
     if not close and len(folded) >= 4:
         close = get_close_matches(folded, _FOLD_KEYS, n=1, cutoff=0.68)
     if close:
         return _FOLD_TO_OFFICIAL[close[0]]
-
+    compact_keys = list(_COMPACT_TO_OFFICIAL)
+    if compact and len(compact) >= 6:
+        close_compact = get_close_matches(compact, compact_keys, n=1, cutoff=0.78)
+        if close_compact:
+            return _COMPACT_TO_OFFICIAL[close_compact[0]]
     starts = [key for key in _FOLD_KEYS if key.startswith(folded) or folded.startswith(key)]
     if len(starts) == 1 and min(len(starts[0]), len(folded)) >= 4:
         return _FOLD_TO_OFFICIAL[starts[0]]
+    return ""
+
+
+def _lookup_skeleton(latin: str) -> str:
+    tokens = _token_skeletons(latin)
+    if not tokens:
+        return ""
+    hits: list[tuple[int, str]] = []
+    for official, official_tokens in _OFFICIAL_TOKEN_SKELS:
+        if not all(token in official_tokens for token in tokens):
+            continue
+        if len(tokens) == 1 and official_tokens != tokens:
+            continue
+        extra = len(official_tokens) - len(tokens)
+        hits.append((extra, official))
+    if not hits:
+        return ""
+    unique = {official for _, official in hits}
+    if len(unique) == 1:
+        return hits[0][1]
+    hits.sort()
+    best_extra = hits[0][0]
+    best = [official for extra, official in hits if extra == best_extra]
+    if len(set(best)) == 1:
+        return best[0]
+    return ""
+
+
+def resolve_meta_city(raw: str) -> str:
+    original = " ".join((raw or "").split())
+    if not original:
+        return ""
+
+    arabic_norm = normalize_arabic_text(original)
+    alias_hit = _ARABIC_NORM_TO_OFFICIAL.get(arabic_norm)
+    if alias_hit:
+        return alias_hit
+
+    folded = fold_city(original)
+    hit = _lookup_folded(folded)
+    if hit:
+        return hit
+
+    roman = romanize_arabic(original)
+    if roman and roman != folded:
+        hit = _lookup_folded(roman)
+        if hit:
+            return hit
+        hit = _lookup_skeleton(roman)
+        if hit:
+            return hit
+    elif folded:
+        hit = _lookup_skeleton(folded)
+        if hit:
+            return hit
 
     return original
+
+
+_ARABIC_RE = re.compile(r"[\u0600-\u06ff]")
+FALLBACK_VILLE = "RABAT"
+OFFICIAL_SET = set(OFFICIAL_META_CITIES)
+
+
+def has_arabic(text: str) -> bool:
+    return bool(_ARABIC_RE.search(text or ""))
+
+
+def is_official_meta_city(text: str) -> bool:
+    return (text or "").strip() in OFFICIAL_SET
+
+
+def latin_ville(*candidates: str) -> str:
+    for candidate in candidates:
+        text = (candidate or "").strip()
+        if not text:
+            continue
+        if is_official_meta_city(text) and not has_arabic(text):
+            return text
+        resolved = resolve_meta_city(text)
+        if is_official_meta_city(resolved) and not has_arabic(resolved):
+            return resolved
+    return FALLBACK_VILLE

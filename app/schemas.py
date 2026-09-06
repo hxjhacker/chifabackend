@@ -48,6 +48,7 @@ class OrderUpdate(BaseModel):
     customer_name: str | None = None
     full_name: str | None = None
     city: str | None = None
+    shipping_city: str | None = None
     region: str | None = None
     region_id: str | None = None
     full_address: str | None = None
@@ -81,6 +82,7 @@ class OrderUpdate(BaseModel):
         aliases = {
             "full_name": ("full_name", "fullName", "customer_name", "customerName"),
             "customer_name": ("customer_name", "customerName"),
+            "shipping_city": ("shipping_city", "shippingCity", "meta_city", "metaCity"),
             "region": ("region", "region_id", "regionId"),
             "region_id": ("region_id", "regionId", "region"),
             "address": ("address", "full_address", "fullAddress"),
