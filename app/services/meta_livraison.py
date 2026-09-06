@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 import traceback
 from typing import Any
@@ -9,7 +10,7 @@ import httpx
 from app.config import settings
 
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE", "YOUR_API_SECRET_HERE"}
-DEFAULT_BASE = "https://api.metalivraison.ma"
+DEFAULT_BASE = "https://api.metalivraison.ma/colis-service"
 COLIS_PATH = "/api/v1/partner/colis"
 PACK_NAMES = {
     "quran": "مصحف شيفا جلو",
@@ -17,24 +18,61 @@ PACK_NAMES = {
 }
 
 
-def _env(value: str | None, fallback: str = "") -> str:
-    return (value or fallback).strip()
+def _clean(value: str | None) -> str:
+    text = (value or "").strip().lstrip("\ufeff")
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1].strip()
+    return text
+
+
+def _os_env(name: str, fallback: str = "") -> str:
+    return _clean(os.getenv(name, "") or fallback)
+
+
+def api_key() -> str:
+    return _os_env("META_LIVRAISON_API_KEY") or _clean(settings.meta_livraison_api_key)
+
+
+def api_secret() -> str:
+    return _os_env("META_LIVRAISON_API_SECRET") or _clean(settings.meta_livraison_api_secret)
+
+
+def base_url() -> str:
+    raw = _os_env("META_LIVRAISON_BASE_URL") or _clean(settings.meta_livraison_base_url) or DEFAULT_BASE
+    return raw.rstrip("/")
 
 
 def configured() -> bool:
-    key = _env(settings.meta_livraison_api_key)
-    secret = _env(settings.meta_livraison_api_secret)
+    key = api_key()
+    secret = api_secret()
     return bool(key and secret and key not in EMPTY_KEYS and secret not in EMPTY_KEYS)
 
 
 def colis_url() -> str:
-    base = _env(settings.meta_livraison_base_url, DEFAULT_BASE).rstrip("/")
+    base = base_url()
     if base.endswith(COLIS_PATH):
         return base
     if base.endswith("/colis-service"):
-        base = base[: -len("/colis-service")]
+        return base
     return f"{base}{COLIS_PATH}"
 
+
+def debug_credentials() -> None:
+    key = _os_env("META_LIVRAISON_API_KEY")
+    secret = _os_env("META_LIVRAISON_API_SECRET")
+    raw_base = os.getenv("META_LIVRAISON_BASE_URL", DEFAULT_BASE)
+    names = sorted(k for k in os.environ if "LIVRAISON" in k.upper() or k.startswith("META_"))
+    print(f"[DEBUG META LIVRAISON] Base URL: {raw_base.rstrip('/') if isinstance(raw_base, str) else raw_base}")
+    print(f"[DEBUG META LIVRAISON] Key length: {len(key)}, Key prefix: {key[:6]}...")
+    print(f"[DEBUG META LIVRAISON] Secret length: {len(secret)}, Secret prefix: {secret[:6]}...")
+    print(f"[DEBUG META LIVRAISON] POST URL: {colis_url()}")
+    print(f"[DEBUG META LIVRAISON] os.environ names: {names}")
+    print(
+        "[DEBUG META LIVRAISON] settings fallback "
+        f"key_len={len(_clean(settings.meta_livraison_api_key))} "
+        f"secret_len={len(_clean(settings.meta_livraison_api_secret))} "
+        f"base={settings.meta_livraison_base_url!r}"
+    )
 
 def _national_phone(phone: str, phone_national: str) -> str:
     digits = "".join(ch for ch in (phone_national or phone or "") if ch.isdigit())
@@ -74,8 +112,9 @@ def _meta_detail(res: httpx.Response) -> Any:
 
 
 def create_colis(order: Any) -> dict[str, Any]:
-    key = _env(settings.meta_livraison_api_key)
-    secret = _env(settings.meta_livraison_api_secret)
+    debug_credentials()
+    key = api_key()
+    secret = api_secret()
     if not configured():
         return {"ok": False, "status": 400, "detail": "meta_livraison_not_configured", "code": "", "text": ""}
 
@@ -126,9 +165,14 @@ def create_colis(order: Any) -> dict[str, Any]:
         "X-API-Key": key,
         "X-API-Secret": secret,
     }
+    post_url = colis_url()
+    print(f"[DEBUG META LIVRAISON] sending POST {post_url}")
+    print(f"[DEBUG META LIVRAISON] sending header names: {list(headers.keys())}")
+    print(f"[DEBUG META LIVRAISON] sending key prefix: {key[:6]}..., len={len(key)}")
+    print(f"[DEBUG META LIVRAISON] sending secret prefix: {secret[:6]}..., len={len(secret)}")
     try:
         with httpx.Client(timeout=15.0) as client:
-            res = client.post(colis_url(), json=body, headers=headers)
+            res = client.post(post_url, json=body, headers=headers)
         print("STATUS FROM META:", res.status_code)
         print("RAW BODY FROM META:", res.text)
         detail = _meta_detail(res)

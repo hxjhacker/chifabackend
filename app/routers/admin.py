@@ -701,7 +701,17 @@ def admin_send_livraison(
                 )
             raise
 
-        from app.services.meta_livraison import configured, create_colis
+        import os
+
+        from app.services.meta_livraison import configured, create_colis, debug_credentials
+
+        api_key = os.getenv("META_LIVRAISON_API_KEY", "").strip()
+        api_secret = os.getenv("META_LIVRAISON_API_SECRET", "").strip()
+        base_url = os.getenv("META_LIVRAISON_BASE_URL", "https://api.metalivraison.ma/colis-service").rstrip("/")
+        print(f"[DEBUG META LIVRAISON] Base URL: {base_url}")
+        print(f"[DEBUG META LIVRAISON] Key length: {len(api_key)}, Key prefix: {api_key[:6]}...")
+        print(f"[DEBUG META LIVRAISON] Secret length: {len(api_secret)}, Secret prefix: {api_secret[:6]}...")
+        debug_credentials()
 
         if not configured():
             return JSONResponse(
