@@ -84,5 +84,20 @@ def ensure_order_columns() -> None:
 
 
 def get_session() -> Generator[Session, None, None]:
-    with Session(engine) as session:
+    session: Session | None = None
+    try:
+        session = Session(engine)
         yield session
+    except Exception:
+        if session is not None:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        raise
+    finally:
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass

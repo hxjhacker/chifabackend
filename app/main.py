@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import SQLModel, Session
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.cities import router as cities_router
 from app.api.health import router as health_router
@@ -27,8 +28,22 @@ async def lifespan(_: FastAPI):
     yield
 
 
+class Json500Middleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            traceback.print_exc()
+            print("MIDDLEWARE EXCEPTION:", type(exc).__name__, repr(exc), "path=", request.url.path)
+            return JSONResponse(
+                status_code=500,
+                content={"error": str(exc), "traceback": traceback.format_exc()},
+            )
+
+
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
+app.add_middleware(Json500Middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list or ["*"],
@@ -47,16 +62,9 @@ app.include_router(admin_router)
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
+async def global_exception_handler(request: Request, exc: Exception):
     traceback.print_exc()
-    print("UNHANDLED EXCEPTION:", type(exc).__name__, repr(exc), "path=", request.url.path)
     return JSONResponse(
         status_code=500,
-        content={
-            "success": False,
-            "error": str(exc),
-            "error_type": type(exc).__name__,
-            "traceback": traceback.format_exc(),
-            "path": str(request.url.path),
-        },
+        content={"error": str(exc), "traceback": traceback.format_exc()},
     )

@@ -7,14 +7,14 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import inspect, or_, text
 from sqlmodel import Session, select
 
-from app.db import get_session
-from app.dependencies import bearer_scheme, client_ip, get_current_admin
+from app.db import engine, get_session
+from app.dependencies import client_ip, get_current_admin
 from app.models import Order
 from app.rate_limit import login_limiter
 from app.security import (
@@ -686,12 +686,10 @@ def admin_update_order(
 def admin_send_livraison(
     order_id: str,
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    session: Session = Depends(get_session),
+    creds: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
 ):
+    session: Session | None = None
     try:
-        import traceback
-
         try:
             get_current_admin(request, creds)
         except HTTPException as exc:
@@ -728,9 +726,11 @@ def admin_send_livraison(
                 {"success": False, "detail": "META_LIVRAISON_API_KEY or META_LIVRAISON_API_SECRET is missing"},
                 status_code=400,
             )
+
+        session = Session(engine)
         order = _load_order(session, order_id)
         if not order:
-            raise HTTPException(status_code=404, detail="order_not_found")
+            return JSONResponse({"success": False, "detail": "order_not_found"}, status_code=404)
         if _display_status(str(getattr(order, "status", "") or "")) == "cancelled":
             return JSONResponse({"success": False, "detail": "cannot_ship_cancelled"}, status_code=400)
         existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
@@ -765,17 +765,21 @@ def admin_send_livraison(
         session.commit()
         session.refresh(order)
         return JSONResponse({**_serialize_order(order), "success": True})
-    except HTTPException:
-        raise
     except Exception as e:
-        import traceback
-
         traceback.print_exc()
-        try:
-            session.rollback()
-        except Exception:
-            pass
+        print("LIVRAISON EXCEPTION:", type(e).__name__, repr(e))
+        if session is not None:
+            try:
+                session.rollback()
+            except Exception:
+                pass
         return JSONResponse(
             status_code=500,
             content={"error": str(e), "traceback": traceback.format_exc()},
         )
+    finally:
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass
