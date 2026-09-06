@@ -33,15 +33,16 @@ from app.services.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-AdminStatus = Literal["new", "confirmed", "shipped", "delivered", "cancelled"]
+AdminStatus = Literal["new", "confirmed", "shipped", "delivered", "returned", "cancelled"]
 
 NEW_EQUIV = ("pending", "upsell_accepted", "new")
-ALLOWED_STATUSES: tuple[str, ...] = ("new", "confirmed", "shipped", "delivered", "cancelled")
+ALLOWED_STATUSES: tuple[str, ...] = ("new", "confirmed", "shipped", "delivered", "returned", "cancelled")
 STATUS_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "new": ("confirmed", "cancelled"),
     "confirmed": ("shipped", "cancelled"),
-    "shipped": ("delivered", "cancelled"),
+    "shipped": ("delivered", "returned", "cancelled"),
     "delivered": (),
+    "returned": (),
     "cancelled": ("new", "confirmed"),
 }
 REGION_IDS = tuple(f"MA{i:02d}" for i in range(1, 13))
@@ -70,6 +71,8 @@ class BulkOrderIds(BaseModel):
 def _display_status(raw: str) -> str:
     if raw in NEW_EQUIV:
         return "new"
+    if raw == "in_shipping":
+        return "shipped"
     if raw in ALLOWED_STATUSES:
         return raw
     return "new"
@@ -202,9 +205,9 @@ def _stamp_status(order: Order, status_value: str, cols: set[str] | None = None)
         _assign(order, known, "delivered_at", None)
         _assign(order, known, "cancelled_at", None)
         return
-    if status_value in ("confirmed", "shipped", "delivered") and not order.confirmed_at:
+    if status_value in ("confirmed", "shipped", "delivered", "returned") and not order.confirmed_at:
         _assign(order, known, "confirmed_at", now)
-    if status_value in ("shipped", "delivered") and not order.shipped_at:
+    if status_value in ("shipped", "delivered", "returned") and not order.shipped_at:
         _assign(order, known, "shipped_at", now)
     if status_value == "delivered" and not order.delivered_at:
         _assign(order, known, "delivered_at", now)
@@ -216,7 +219,7 @@ def _stamp_status(order: Order, status_value: str, cols: set[str] | None = None)
     if status_value == "confirmed":
         _assign(order, known, "shipped_at", None)
         _assign(order, known, "delivered_at", None)
-    elif status_value == "shipped":
+    elif status_value in ("shipped", "returned"):
         _assign(order, known, "delivered_at", None)
 
 
@@ -441,6 +444,8 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
 def _status_filter(value: str):
     if value == "new":
         return Order.status.in_(NEW_EQUIV)
+    if value == "shipped":
+        return Order.status.in_(("shipped", "in_shipping"))
     return Order.status == value
 
 
@@ -507,7 +512,7 @@ def admin_stats(
             delivered += 1
         elif display == "cancelled":
             cancelled += 1
-        if display != "cancelled":
+        if display not in ("cancelled", "returned"):
             revenue_cents += int(cents or 0)
 
     won = confirmed + shipped + delivered
@@ -838,6 +843,18 @@ def admin_bulk_livraison(
         "failed_count": len(results) - success_count,
         "results": results,
     }
+
+
+@router.post("/orders/sync-tracking")
+def admin_sync_tracking(admin: dict = Depends(get_current_admin)):
+    _ = admin
+    from app.services.tracking_sync import sync_shipped_orders
+
+    api_key, api_secret, base_url = _meta_creds()
+    report = sync_shipped_orders(api_key=api_key, api_secret=api_secret, base_url=base_url)
+    if report.get("error") == "meta_livraison_not_configured":
+        raise HTTPException(status_code=400, detail="meta_livraison_not_configured")
+    return report
 
 
 @router.post("/orders/bulk-labels")

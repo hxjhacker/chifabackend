@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import traceback
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -25,7 +26,27 @@ async def lifespan(_: FastAPI):
     ensure_order_columns()
     with Session(engine) as session:
         seed_products(session)
+    scheduler = BackgroundScheduler()
+    try:
+        from app.services.tracking_sync import run_scheduled_tracking_sync
+
+        scheduler.add_job(
+            run_scheduled_tracking_sync,
+            "interval",
+            hours=2,
+            id="meta_tracking_sync",
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.start()
+        print("[META_TRACKING_SYNC] scheduler started (every 2 hours)", flush=True)
+    except Exception:
+        traceback.print_exc()
     yield
+    try:
+        scheduler.shutdown(wait=False)
+    except Exception:
+        pass
 
 
 class Json500Middleware(BaseHTTPMiddleware):

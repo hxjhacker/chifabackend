@@ -4,6 +4,7 @@ import json
 import os
 import re
 import traceback
+import unicodedata
 from io import BytesIO
 from typing import Any
 
@@ -452,3 +453,143 @@ def merge_label_pdfs(blobs: list[bytes]) -> bytes:
     out = BytesIO()
     writer.write(out)
     return out.getvalue()
+
+
+def _fold_status(value: str) -> str:
+    text = unicodedata.normalize("NFKD", value or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.casefold().replace("-", " ").replace("_", " ").replace("/", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_meta_status(raw: str) -> str | None:
+    """Map a Meta Livraison etat string to delivered | returned | cancelled | in_shipping."""
+    folded = _fold_status(raw)
+    if not folded:
+        return None
+    compact = folded.replace(" ", "_")
+    if any(token in folded for token in ("retour", "return", "مرتجع")):
+        return "returned"
+    if any(token in folded for token in ("annul", "refus", "cancel", "ملغ")):
+        return "cancelled"
+    if compact in {"en_cours", "expedie", "expediee", "in_shipping"}:
+        return "in_shipping"
+    if any(
+        token in folded
+        for token in ("en cours", "expedie", "shipped", "ramass", "distribution", "قيد الشحن", "en livraison")
+    ):
+        return "in_shipping"
+    if any(token in folded for token in ("non livre", "pas livre", "not delivered")):
+        return "in_shipping"
+    if compact in {"livre", "livree", "delivered", "delivre"}:
+        return "delivered"
+    if re.search(r"(^|[^a-z])livr[eé]e?([^a-z]|$)", folded) or any(
+        token in folded for token in ("تم التوصيل", "تم التسليم")
+    ):
+        return "delivered"
+    return None
+
+
+def _status_candidates(payload: Any, depth: int = 0) -> list[str]:
+    keys = (
+        "statut",
+        "status",
+        "etat",
+        "state",
+        "situation",
+        "lastStatus",
+        "last_status",
+        "statusCode",
+        "status_code",
+        "etatColis",
+        "etat_colis",
+        "lastEtat",
+    )
+    found: list[str] = []
+    if depth > 4:
+        return found
+    for layer in _payload_layers(payload):
+        for key in keys:
+            value = layer.get(key)
+            if value in (None, "", True, False):
+                continue
+            if isinstance(value, dict):
+                for nested in ("code", "name", "libelle", "label", "etat", "status"):
+                    inner = value.get(nested)
+                    if inner not in (None, ""):
+                        found.append(str(inner))
+            else:
+                found.append(str(value))
+        history = layer.get("historique") or layer.get("history") or layer.get("events") or layer.get("tracking")
+        if isinstance(history, list) and history:
+            last = history[-1]
+            if isinstance(last, dict):
+                found.extend(_status_candidates(last, depth + 1))
+            elif last not in (None, ""):
+                found.append(str(last))
+    return found
+
+
+def tracking_url(tracking_code: str, override: str | None = None) -> str:
+    code = str(tracking_code or "").strip()
+    root = colis_url(override).rstrip("/")
+    return f"{root}/{code}" if code else root
+
+
+def get_order_status_from_meta(
+    tracking_code: str,
+    *,
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    base_url_override: str | None = None,
+) -> dict[str, Any]:
+    code = str(tracking_code or "").strip()
+    if not code:
+        return {"ok": False, "status": None, "raw": "", "error": "missing_tracking_code", "detail": None}
+    key = _clean(api_key) or live_env("META_LIVRAISON_API_KEY")
+    secret = _clean(api_secret) or live_env("META_LIVRAISON_API_SECRET")
+    if not configured(key, secret):
+        return {"ok": False, "status": None, "raw": "", "error": "meta_livraison_not_configured", "detail": None}
+    url = tracking_url(code, base_url_override)
+    headers = {
+        "Accept": "application/json",
+        "X-API-Key": key,
+        "X-API-Secret": secret,
+    }
+    try:
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+            res = client.get(url, headers=headers)
+        detail = _meta_detail(res)
+        if res.status_code >= 400:
+            return {
+                "ok": False,
+                "status": None,
+                "raw": res.text[:500],
+                "error": f"http_{res.status_code}",
+                "detail": detail,
+            }
+        parsed = detail if isinstance(detail, dict) else {}
+        candidates = _status_candidates(parsed)
+        if isinstance(detail, str):
+            candidates.append(detail)
+        status = None
+        raw = ""
+        for candidate in candidates:
+            status = normalize_meta_status(candidate)
+            if status:
+                raw = candidate
+                break
+        if not status:
+            blob = res.text
+            status = normalize_meta_status(blob)
+            raw = blob[:120]
+        return {
+            "ok": True,
+            "status": status or "in_shipping",
+            "raw": raw,
+            "error": "",
+            "detail": detail,
+        }
+    except Exception as err:
+        traceback.print_exc()
+        return {"ok": False, "status": None, "raw": "", "error": str(err), "detail": None}
