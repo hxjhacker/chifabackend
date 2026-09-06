@@ -27,6 +27,7 @@ from app.security import (
 from app.schemas import OrderUpdate
 from app.services.pricing import cents_to_mad
 from app.services.page_views import observatory_stats
+from app.services.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -283,6 +284,8 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
     if "shipping_city" in data:
         shipping = str(data["shipping_city"] or "").strip()[:160] or None
         _assign(order, known, "shipping_city", shipping)
+        if shipping:
+            _assign(order, known, "region_id", region_id_for_city(shipping))
     if "product_slug" in data and data["product_slug"]:
         _assign(order, known, "product_slug", str(data["product_slug"]))
     if "tier_qty" in data and data["tier_qty"]:
@@ -303,7 +306,7 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
             _assign(order, known, field, value)
     if "address" in data:
         _assign(order, known, "address", (str(data["address"]) if data["address"] is not None else "").strip() or None)
-    if "region_id" in data:
+    if "region_id" in data and "shipping_city" not in data:
         _assign(order, known, "region_id", _resolve_region(str(data["region_id"]) if data["region_id"] is not None else None))
     if "bundle_enabled" in data:
         _assign(order, known, "bundle_enabled", bool(data["bundle_enabled"]))
