@@ -721,12 +721,18 @@ def admin_send_livraison(
 
         result = create_colis(order)
         if not result.get("ok"):
-            detail = result.get("text") or result.get("detail") or "meta_livraison_failed"
-            print("401 details:" if int(result.get("status") or 0) == 401 else "meta_livraison_failed:", detail)
-            return JSONResponse({"success": False, "detail": detail}, status_code=400)
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "origin": "meta_livraison",
+                    "status_code": int(result.get("status") or 400),
+                    "detail": result.get("detail") if result.get("detail") not in (None, "") else result.get("text"),
+                },
+            )
 
         cols = _order_column_names(session)
-        code = str(result.get("code") or str(order.id)[:12]).upper()
+        code = str(result.get("code") or str(order.id).replace("-", "")[:8]).upper()
         now = datetime.now(timezone.utc)
         _assign(order, cols, "meta_livraison_code", code)
         _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)

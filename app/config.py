@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     vapid_private_key: str = "aoeWVCDnWXyAQB7YjEldsJXqdaNk8005Ks2PwckW8TI"
     vapid_subject: str = "mailto:hello@chifaglow.com"
 
-    meta_livraison_base_url: str = "https://api.metalivraison.ma/colis-service"
+    meta_livraison_base_url: str = "https://api.metalivraison.ma"
     meta_livraison_api_key: str = ""
     meta_livraison_api_secret: str = ""
 
