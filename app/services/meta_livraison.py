@@ -14,6 +14,34 @@ PACK_NAMES = {
     "quran": "مصحف شيفا جلو",
     "educative": "حصيرة تعليمية",
 }
+ARABIC_CITY_MAP = {
+    "الرباط": "Rabat",
+    "الدار البيضاء": "Casablanca",
+    "كازا": "Casablanca",
+    "مراكش": "Marrakech",
+    "طنجة": "Tanger",
+    "فاس": "Fes",
+    "مكناس": "Meknes",
+    "سلا": "Sale",
+    "أكادير": "Agadir",
+    "القنيطرة": "Kenitra",
+    "وجدة": "Oujda",
+    "تطوان": "Tetouan",
+    "تمارة": "Temara",
+    "المحمدية": "Mohammedia",
+    "الجديدة": "El Jadida",
+    "بني ملال": "Beni Mellal",
+    "الناظور": "Nador",
+    "خريبكة": "Khouribga",
+    "سطات": "Settat",
+    "برشيد": "Berrechid",
+    "العرائش": "Larache",
+    "الخميسات": "Khemisset",
+    "كلميم": "Guelmim",
+    "بركان": "Berkane",
+    "التازة": "Taza",
+    "تازة": "Taza",
+}
 
 
 def _clean(value: str | None) -> str:
@@ -100,6 +128,36 @@ def _text(*values: Any, fallback: str = "") -> str:
     return fallback
 
 
+def _city_lookup() -> dict[str, str]:
+    table: dict[str, str] = {}
+    for arabic, french in ARABIC_CITY_MAP.items():
+        table[" ".join(arabic.split())] = french
+        table[" ".join(french.split()).casefold()] = french
+    return table
+
+
+_CITY_LOOKUP = _city_lookup()
+
+
+def latin_city(raw: str) -> str:
+    text = " ".join((raw or "").strip().split())
+    if not text:
+        return ""
+    mapped = _CITY_LOOKUP.get(text) or _CITY_LOOKUP.get(text.casefold())
+    if mapped:
+        return mapped
+    try:
+        from app.services.cities import find_city
+
+        found = find_city(text)
+        french = str((found or {}).get("fr") or "").strip()
+        if french:
+            return _CITY_LOOKUP.get(french) or _CITY_LOOKUP.get(french.casefold()) or french
+    except Exception:
+        pass
+    return text
+
+
 def build_payload(order: Any, phone: str) -> dict[str, Any]:
     destinataire = _text(
         getattr(order, "full_name", None),
@@ -109,8 +167,13 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
     )
     raw_price = float(getattr(order, "total_cents", 0) or 0) / 100
     price: int | float = int(raw_price) if raw_price.is_integer() else round(raw_price, 2)
-    ville = _text(getattr(order, "city", None), fallback="")
-    address = _text(getattr(order, "address", None), ville, fallback="Centre Ville")
+    raw_city = _text(getattr(order, "city", None), fallback="")
+    ville = latin_city(raw_city)
+    raw_address = _text(getattr(order, "address", None), fallback="")
+    if not raw_address or raw_address == raw_city:
+        address = ville or "Centre Ville"
+    else:
+        address = latin_city(raw_address) if raw_address in ARABIC_CITY_MAP else raw_address
     slug = _text(getattr(order, "product_slug", None))
     marchendise = _text(PACK_NAMES.get(slug, slug), fallback="Produit")
     quantity = int(getattr(order, "tier_qty", None) or getattr(order, "quantity", None) or 1)
@@ -124,7 +187,9 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
         "replaceColis": False,
         "phone": phone,
         "ville": ville,
+        "city": ville,
         "address": address,
+        "adresse": address,
         "price": price,
         "code": code,
         "marchendise": marchendise,
