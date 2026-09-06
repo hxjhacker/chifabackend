@@ -2,7 +2,6 @@
 
 from typing import Sequence, Union
 
-import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0003_order_delivery_details"
@@ -12,20 +11,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.alter_column("orders", "address", existing_type=sa.String(length=240), type_=sa.String(length=500))
-    op.add_column("orders", sa.Column("quartier", sa.String(length=120), nullable=True))
-    op.add_column("orders", sa.Column("street", sa.String(length=160), nullable=True))
-    op.add_column("orders", sa.Column("building", sa.String(length=80), nullable=True))
-    op.add_column("orders", sa.Column("landmark", sa.String(length=160), nullable=True))
-    op.add_column("orders", sa.Column("delivery_window", sa.String(length=32), nullable=True))
-    op.add_column("orders", sa.Column("courier_notes", sa.Text(), nullable=True))
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS address text")
+    op.execute("ALTER TABLE orders ALTER COLUMN address TYPE text USING address::text")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS quartier varchar(120)")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS street varchar(160)")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS building varchar(80)")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS landmark varchar(160)")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_window varchar(32)")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier_notes text")
 
 
 def downgrade() -> None:
-    op.drop_column("orders", "courier_notes")
-    op.drop_column("orders", "delivery_window")
-    op.drop_column("orders", "landmark")
-    op.drop_column("orders", "building")
-    op.drop_column("orders", "street")
-    op.drop_column("orders", "quartier")
-    op.alter_column("orders", "address", existing_type=sa.String(length=500), type_=sa.String(length=240))
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS courier_notes")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS delivery_window")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS landmark")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS building")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS street")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS quartier")
+    op.execute("ALTER TABLE orders ALTER COLUMN address TYPE varchar(240) USING left(address::text, 240)")

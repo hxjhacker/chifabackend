@@ -2,7 +2,6 @@
 
 from typing import Sequence, Union
 
-import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0004_order_confirm_details"
@@ -12,14 +11,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.alter_column("orders", "address", existing_type=sa.String(length=500), type_=sa.Text())
-    op.add_column("orders", sa.Column("region_id", sa.String(length=8), nullable=True))
-    op.add_column("orders", sa.Column("bundle_enabled", sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.add_column("orders", sa.Column("secondary_qty", sa.Integer(), nullable=False, server_default="1"))
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS address text")
+    op.execute("ALTER TABLE orders ALTER COLUMN address TYPE text USING address::text")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS region_id varchar(32)")
+    op.execute("ALTER TABLE orders ALTER COLUMN region_id TYPE varchar(32)")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS bundle_enabled boolean DEFAULT false")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS secondary_qty integer DEFAULT 1")
 
 
 def downgrade() -> None:
-    op.drop_column("orders", "secondary_qty")
-    op.drop_column("orders", "bundle_enabled")
-    op.drop_column("orders", "region_id")
-    op.alter_column("orders", "address", existing_type=sa.Text(), type_=sa.String(length=500))
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS secondary_qty")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS bundle_enabled")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS region_id")
+    op.execute("ALTER TABLE orders ALTER COLUMN address TYPE varchar(500) USING address::varchar(500)")

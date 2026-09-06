@@ -2,7 +2,6 @@
 
 from typing import Sequence, Union
 
-import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0006_meta_livraison"
@@ -12,10 +11,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("orders", sa.Column("meta_livraison_code", sa.String(length=80), nullable=True))
-    op.add_column("orders", sa.Column("meta_livraison_sent_at", sa.DateTime(timezone=True), nullable=True))
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_code varchar(80)")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_sent_at timestamptz")
 
 
 def downgrade() -> None:
-    op.drop_column("orders", "meta_livraison_sent_at")
-    op.drop_column("orders", "meta_livraison_code")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS meta_livraison_sent_at")
+    op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS meta_livraison_code")

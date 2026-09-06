@@ -64,23 +64,27 @@ PUSH_SUBSCRIPTIONS_SQL = (
 )
 
 
+def _exec_isolated(conn, sql: str) -> None:
+    """Run one statement in a savepoint so a failure cannot abort the batch."""
+    try:
+        conn.execute(text("SAVEPOINT schema_stmt"))
+        conn.execute(text(sql))
+        conn.execute(text("RELEASE SAVEPOINT schema_stmt"))
+    except Exception:
+        try:
+            conn.execute(text("ROLLBACK TO SAVEPOINT schema_stmt"))
+        except Exception:
+            pass
+
+
 def ensure_order_columns() -> None:
     with engine.begin() as conn:
         for sql in ORDER_COLUMN_ALTERS:
-            try:
-                conn.execute(text(sql))
-            except Exception:
-                continue
+            _exec_isolated(conn, sql)
         for sql in PAGE_VIEWS_SQL:
-            try:
-                conn.execute(text(sql))
-            except Exception:
-                continue
+            _exec_isolated(conn, sql)
         for sql in PUSH_SUBSCRIPTIONS_SQL:
-            try:
-                conn.execute(text(sql))
-            except Exception:
-                continue
+            _exec_isolated(conn, sql)
 
 
 def get_session() -> Generator[Session, None, None]:
