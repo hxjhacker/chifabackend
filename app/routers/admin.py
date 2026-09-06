@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -48,11 +48,11 @@ STATUS_TRANSITIONS: dict[str, tuple[str, ...]] = {
 REGION_IDS = tuple(f"MA{i:02d}" for i in range(1, 13))
 
 PACK_NAMES = {
-    "quran": "USB القرآن الكريم",
-    "kids": "USB تعليم الأطفال",
-    "music": "USB الأغاني والموسيقى",
-    "educative": "الفلاشة التعليمية الذكية",
-    "extra": "مفتاح إضافي بسعر العرض",
+    "quran": "USB Ø§Ù„Ù‚Ø±Ø¢Ù† Ø§Ù„ÙƒØ±ÙŠÙ…",
+    "kids": "USB ØªØ¹Ù„ÙŠÙ… Ø§Ù„Ø£Ø·ÙØ§Ù„",
+    "music": "USB Ø§Ù„Ø£ØºØ§Ù†ÙŠ ÙˆØ§Ù„Ù…ÙˆØ³ÙŠÙ‚Ù‰",
+    "educative": "Ø§Ù„ÙÙ„Ø§Ø´Ø© Ø§Ù„ØªØ¹Ù„ÙŠÙ…ÙŠØ© Ø§Ù„Ø°ÙƒÙŠØ©",
+    "extra": "Ù…ÙØªØ§Ø­ Ø¥Ø¶Ø§ÙÙŠ Ø¨Ø³Ø¹Ø± Ø§Ù„Ø¹Ø±Ø¶",
 }
 
 
@@ -95,7 +95,7 @@ def _composed_address(order: Order) -> str:
         str(getattr(order, field, None) or "").strip()
         for field in ("quartier", "street", "building", "landmark")
     ]
-    return "، ".join(part for part in bits if part)
+    return "ØŒ ".join(part for part in bits if part)
 
 
 def _has_complete_confirm_details(order: Order) -> bool:
@@ -106,17 +106,17 @@ def _has_complete_confirm_details(order: Order) -> bool:
     if len(name) < 3 or len(city) < 2 or not phone or len(address) < 8:
         return False
     rest = address.replace(city, " ")
-    for ch in "،,.- \t":
+    for ch in "ØŒ,.- \t":
         rest = rest.replace(ch, "")
     return len(rest) >= 5
 
 
 def _pack_label(order: Order) -> str:
-    parts = [f"{PACK_NAMES.get(order.product_slug, order.product_slug)} × {order.tier_qty}"]
+    parts = [f"{PACK_NAMES.get(order.product_slug, order.product_slug)} Ã— {order.tier_qty}"]
     if order.cross_sell_slug:
         parts.append(PACK_NAMES.get(order.cross_sell_slug, order.cross_sell_slug))
     if order.upsell_slug:
-        parts.append(f"{PACK_NAMES.get(order.upsell_slug, order.upsell_slug)} (عرض)")
+        parts.append(f"{PACK_NAMES.get(order.upsell_slug, order.upsell_slug)} (Ø¹Ø±Ø¶)")
     return " + ".join(parts)
 
 
@@ -864,44 +864,67 @@ def admin_bulk_labels(
     session: Session = Depends(get_session),
 ):
     _ = admin
+    return admin_bulk_labels_pdf(payload, admin, session)
+
+
+LABEL_NOT_DISPATCHED = "لا يمكن طباعة بوليصة شحن لطلبية لم يتم إرسالها لشركة التوصيل بعد."
+
+
+def _tracking_code(order: Order) -> str:
+    return str(getattr(order, "meta_livraison_code", "") or "").strip()
+
+
+def _pdf_labels(orders: list[Order], filename: str, inline: bool = False) -> Response:
+    from app.services.shipping_label import render_label_pdf
+
+    payload = render_label_pdf(orders)
+    disposition = "inline" if inline else "attachment"
+    return Response(
+        content=payload,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+    )
+
+
+@router.get("/orders/{order_id}/label-pdf")
+def admin_label_pdf(
+    order_id: str,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    order = _load_order(session, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    if not _tracking_code(order):
+        raise HTTPException(status_code=400, detail=LABEL_NOT_DISPATCHED)
+    return _pdf_labels([order], f"label-{_tracking_code(order)}.pdf", inline=True)
+
+
+@router.post("/orders/bulk-labels-pdf")
+def admin_bulk_labels_pdf(
+    payload: BulkOrderIds,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
     tokens = _bulk_tokens(payload)
     if not tokens:
         raise HTTPException(status_code=422, detail="order_ids_required")
-    from app.services.meta_livraison import configured, fetch_etiquette_pdf, merge_label_pdfs
-
-    api_key, api_secret, base_url = _meta_creds()
-    if not configured(api_key, api_secret):
-        raise HTTPException(status_code=400, detail="meta_livraison_not_configured")
-
-    blobs: list[bytes] = []
+    ready: list[Order] = []
+    seen: set[str] = set()
     for token in tokens:
         order = _load_order_or_tracking(session, token)
-        if not order:
+        if not order or not _tracking_code(order):
             continue
-        code = str(getattr(order, "meta_livraison_code", "") or "").strip()
-        ticket = str(getattr(order, "meta_livraison_ticket_url", "") or "").strip()
-        if not code and not ticket:
+        oid = str(order.id)
+        if oid in seen:
             continue
-        pdf = fetch_etiquette_pdf(
-            code=code,
-            ticket_url=ticket,
-            api_key=api_key,
-            api_secret=api_secret,
-            base_url_override=base_url,
-        )
-        if pdf:
-            blobs.append(pdf)
-    if not blobs:
-        raise HTTPException(status_code=400, detail="no_labels")
-    try:
-        merged = merge_label_pdfs(blobs)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="no_labels") from exc
-    return Response(
-        content=merged,
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="chifaglow-labels.pdf"'},
-    )
+        seen.add(oid)
+        ready.append(order)
+    if not ready:
+        raise HTTPException(status_code=400, detail=LABEL_NOT_DISPATCHED)
+    return _pdf_labels(ready, "chifaglow-labels.pdf", inline=True)
 
 
 @router.post("/orders/manifest")
@@ -940,7 +963,7 @@ async def admin_send_livraison(order_id: str, request: Request):
                 return JSONResponse(
                     {
                         "success": False,
-                        "message": "جلسة الأدمن غير صالحة. أعد تسجيل الدخول." if exc.status_code == 401 else str(exc.detail),
+                        "message": "Ø¬Ù„Ø³Ø© Ø§Ù„Ø£Ø¯Ù…Ù† ØºÙŠØ± ØµØ§Ù„Ø­Ø©. Ø£Ø¹Ø¯ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„." if exc.status_code == 401 else str(exc.detail),
                         "origin": "admin_session",
                         "error": str(exc.detail),
                     },

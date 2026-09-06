@@ -14,3 +14,8 @@ bcrypt==4.3.0
 pywebpush==2.0.3
 pypdf==5.4.0
 APScheduler==3.10.4
+reportlab==4.2.5
+qrcode==7.4.2
+pillow==10.4.0
+arabic-reshaper==3.0.0
+python-bidi==0.4.2
