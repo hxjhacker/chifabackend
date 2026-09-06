@@ -58,7 +58,7 @@ def configured(key: str | None = None, secret: str | None = None) -> bool:
 
 def colis_url(override: str | None = None) -> str:
     base = base_url(override)
-    if base.endswith(COLIS_PATH) or base.endswith("/colis-service"):
+    if base.endswith(COLIS_PATH):
         return base
     return f"{base}{COLIS_PATH}"
 
