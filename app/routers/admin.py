@@ -300,7 +300,14 @@ def _detail_text(value: Any) -> str:
         return str(value)
 
 
-def _persist_shipped(session: Session, order: Order, code: str, ticket_url: str | None) -> None:
+def _persist_shipped(
+    session: Session,
+    order: Order,
+    code: str,
+    ticket_url: str | None,
+    *,
+    commit: bool = True,
+) -> None:
     cols = _order_column_names(session)
     now = datetime.now(timezone.utc)
     _assign(order, cols, "meta_livraison_code", code)
@@ -310,8 +317,10 @@ def _persist_shipped(session: Session, order: Order, code: str, ticket_url: str 
     _stamp_status(order, "shipped", cols)
     _assign(order, cols, "updated_at", now)
     session.add(order)
-    session.commit()
-    session.refresh(order)
+    session.flush()
+    if commit:
+        session.commit()
+        session.refresh(order)
 
 
 def _dispatch_one(
@@ -322,6 +331,7 @@ def _dispatch_one(
     api_secret: str,
     base_url: str,
     require_confirmed: bool,
+    commit: bool = True,
 ) -> dict[str, Any]:
     from app.services.meta_livraison import create_colis
 
@@ -345,7 +355,7 @@ def _dispatch_one(
         return {"order_id": order_id, "success": False, "tracking": "", "error": err or "meta_livraison_failed"}
     code = str(result.get("code") or "").strip() or str(order.id).replace("-", "")[:8].upper()
     ticket_url = str(result.get("ticket_url") or "").strip() or None
-    _persist_shipped(session, order, code, ticket_url)
+    _persist_shipped(session, order, code, ticket_url, commit=commit)
     return {"order_id": order_id, "success": True, "tracking": code, "error": ""}
 
 
@@ -767,8 +777,8 @@ def admin_update_order(
         except Exception:
             session.rollback()
             session.execute(
-                text("UPDATE orders SET status = :status WHERE id = :id"),
-                {"status": status_value, "id": str(order.id)},
+                text("UPDATE orders SET status = CAST(:status AS VARCHAR) WHERE id = CAST(:id AS UUID)"),
+                {"status": str(status_value), "id": str(order.id)},
             )
             session.commit()
             order = _load_order(session, str(order.id))
@@ -806,9 +816,9 @@ def admin_update_order(
                       product_slug = :product_slug,
                       tier_qty = :tier_qty,
                       total_cents = :total_cents,
-                      status = :status,
+                      status = CAST(:status AS VARCHAR),
                       updated_at = now()
-                    WHERE id = :id
+                    WHERE id = CAST(:id AS UUID)
                     """
                 ),
                 {
@@ -850,25 +860,31 @@ def admin_bulk_livraison(
 
     results: list[dict[str, Any]] = []
     for token in tokens:
-        order = _load_order_or_tracking(session, token)
-        if not order:
-            results.append({"order_id": token, "success": False, "tracking": "", "error": "order_not_found"})
-            continue
         try:
-            results.append(
-                _dispatch_one(
-                    session,
-                    order,
-                    api_key=api_key,
-                    api_secret=api_secret,
-                    base_url=base_url,
-                    require_confirmed=True,
+            with session.begin_nested():
+                order = _load_order_or_tracking(session, token)
+                if not order:
+                    results.append({"order_id": token, "success": False, "tracking": "", "error": "order_not_found"})
+                    continue
+                results.append(
+                    _dispatch_one(
+                        session,
+                        order,
+                        api_key=api_key,
+                        api_secret=api_secret,
+                        base_url=base_url,
+                        require_confirmed=True,
+                        commit=False,
+                    )
                 )
-            )
+            session.commit()
         except Exception as exc:
             traceback.print_exc()
-            session.rollback()
-            results.append({"order_id": str(order.id), "success": False, "tracking": "", "error": str(exc)})
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            results.append({"order_id": token, "success": False, "tracking": "", "error": str(exc)})
     success_count = sum(1 for row in results if row.get("success"))
     return {
         "success_count": success_count,
