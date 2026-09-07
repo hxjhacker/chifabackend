@@ -27,8 +27,10 @@ from app.security import (
     verify_credentials,
 )
 from app.schemas import OrderUpdate
+from app.config import settings
 from app.services.pricing import cents_to_mad
 from app.services.page_views import observatory_stats
+from app.services.logistics_analytics import logistics_analytics
 from app.services.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -530,6 +532,19 @@ def admin_stats(
         "confirmation_rate": rate,
         "total_orders": len(rows),
     }
+
+
+@router.get("/analytics/logistics")
+def admin_logistics_analytics(
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    return logistics_analytics(
+        session,
+        delivery_fee=settings.meta_livraison_delivery_fee,
+        return_fee=settings.meta_livraison_return_fee,
+    )
 
 
 @router.get("/views")

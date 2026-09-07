@@ -18,6 +18,9 @@ REGION_NAME_TO_ID = {
     "الداخلة - وادي الذهب": "MA12",
 }
 
+REGION_ID_TO_NAME = {rid: name for name, rid in REGION_NAME_TO_ID.items()}
+REGION_IDS = tuple(f"MA{i:02d}" for i in range(1, 13))
+
 _TNG = "طنجة - تطوان - الحسيمة"
 _FES = "فاس - مكناس"
 _RBT = "الرباط - سلا - القنيطرة"
