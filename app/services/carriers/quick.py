@@ -22,8 +22,19 @@ def _base_url() -> str:
     return (QUICK_LIVRAISON_API_URL or "https://clients.quicklivraison.ma/api").rstrip("/")
 
 
+PACK_NAMES = {
+    "quran": "مصحف شيفا جلو",
+    "educative": "حصيرة تعليمية",
+}
+
+
 def _national_phone(phone: str, phone_national: str) -> str:
-    digits = "".join(ch for ch in (phone_national or phone or "") if ch.isdigit())
+    raw = str(phone_national or phone or "").replace(" ", "").replace("-", "")
+    if raw.startswith("+212"):
+        raw = "0" + raw[4:]
+    elif raw.startswith("212"):
+        raw = "0" + raw[3:]
+    digits = "".join(ch for ch in raw if ch.isdigit())
     if digits.startswith("212") and len(digits) >= 12:
         digits = "0" + digits[3:]
     elif len(digits) == 9 and digits[0] in "567":
@@ -65,6 +76,78 @@ def _as_int(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return number if number > 0 else None
+
+
+def _qty(order: Any) -> int:
+    raw = getattr(order, "tier_qty", None) or getattr(order, "quantity", None) or 1
+    try:
+        qty = int(raw)
+    except (TypeError, ValueError):
+        return 1
+    return qty if qty > 0 else 1
+
+
+def _product_name(order: Any) -> str:
+    slug = str(getattr(order, "product_slug", "") or "").strip()
+    return PACK_NAMES.get(slug, slug) or "Article"
+
+
+def _form_body(payload: dict[str, Any]) -> dict[str, str]:
+    """Laravel reads montant from form-urlencoded $_POST, not from a JSON body."""
+    body: dict[str, str] = {}
+    for key, value in payload.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            body[key] = "true" if value else "false"
+        elif isinstance(value, float):
+            body[key] = f"{value:.2f}"
+        else:
+            body[key] = str(value)
+    return body
+
+
+def _parse_http_body(res: httpx.Response) -> Any:
+    try:
+        return res.json()
+    except Exception:
+        return {"text": res.text}
+
+
+def _store_succeeded(status_code: int, parsed: Any) -> bool:
+    if status_code not in (200, 201):
+        return False
+    if isinstance(parsed, dict) and parsed.get("success") is False:
+        return False
+    if _tracking_from(parsed):
+        return True
+    if not isinstance(parsed, dict):
+        return False
+    success = parsed.get("success")
+    if success is True:
+        return True
+    if isinstance(success, str) and "succ" in success.casefold():
+        return True
+    return False
+
+
+def _error_detail(parsed: Any, text: str) -> str:
+    if isinstance(parsed, dict):
+        for key in ("message", "error", "detail", "msg"):
+            value = parsed.get(key)
+            if value not in (None, "", False, True):
+                return str(value)
+        errors = parsed.get("errors")
+        if isinstance(errors, dict):
+            parts = []
+            for field, msgs in errors.items():
+                if isinstance(msgs, list):
+                    parts.append(f"{field}: {', '.join(str(m) for m in msgs)}")
+                elif msgs not in (None, ""):
+                    parts.append(f"{field}: {msgs}")
+            if parts:
+                return "; ".join(parts)
+    return text or "quick_livraison_failed"
 
 
 def _city_rows(payload: Any) -> list[dict[str, Any]]:
@@ -184,13 +267,31 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
     async def _post(self, path: str, payload: dict[str, Any]) -> tuple[int, Any, str]:
         url = f"{_base_url()}{path}"
         body = {**payload, "api_key": _api_key()}
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
             res = await client.post(url, params=self._params(), json=body, headers=self._headers())
-        try:
-            parsed = res.json()
-        except Exception:
-            parsed = {"text": res.text}
+        parsed = _parse_http_body(res)
         return res.status_code, parsed, res.text
+
+    async def _post_store(self, payload: dict[str, Any]) -> tuple[int, Any, str]:
+        """Create a parcel: form-urlencoded first (Quick cURL), then JSON if montant is still rejected."""
+        url = f"{_base_url()}/deliveries/store"
+        body = {**payload, "api_key": _api_key()}
+        accept = {"Accept": "application/json"}
+        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+            res = await client.post(
+                url,
+                params=self._params(),
+                data=_form_body(body),
+                headers=accept,
+            )
+            if res.status_code in (400, 422) and "montant" in (res.text or "").casefold():
+                res = await client.post(
+                    url,
+                    params=self._params(),
+                    json=body,
+                    headers={**accept, "Content-Type": "application/json"},
+                )
+        return res.status_code, _parse_http_body(res), res.text
 
     def _district_from_db(self, order: Any) -> int | None:
         names = [
@@ -240,47 +341,56 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
                 "carrier": self.carrier_id,
                 "error": "quick_district_not_mapped",
             }
-        phone = _national_phone(str(getattr(order, "phone", "") or ""), str(getattr(order, "phone_national", "") or ""))
+        phone = _national_phone(
+            str(getattr(order, "phone", "") or ""),
+            str(getattr(order, "phone_national", "") or ""),
+        )
+        city = str(getattr(order, "city", "") or getattr(order, "shipping_city", "") or "").strip()
         address = " ".join(
             part
             for part in (
                 str(getattr(order, "address", "") or "").strip(),
                 str(getattr(order, "quartier", "") or "").strip(),
                 str(getattr(order, "street", "") or "").strip(),
-                str(getattr(order, "city", "") or "").strip(),
+                city,
             )
             if part
-        ).strip()
+        ).strip() or city or "Maroc"
+        name = str(getattr(order, "full_name", "") or "").strip() or "Client"
         order_amount = _order_amount(order)
+        code = str(getattr(order, "code", None) or getattr(order, "id", "") or "")
         payload = {
-            "district_id": district_id,
-            "city_id": district_id,
-            "name": str(getattr(order, "full_name", "") or "").strip(),
-            "receiver_name": str(getattr(order, "full_name", "") or "").strip(),
+            "district_id": int(district_id),
+            "city_id": int(district_id),
+            "name": name,
+            "receiver_name": name,
             "phone": phone,
             "tel": phone,
             "address": address,
             "adresse": address,
+            "amount": order_amount,
             "montant": order_amount,
             "price": order_amount,
             "prix": order_amount,
             "cod_amount": order_amount,
+            "code": code,
+            "open": "true",
+            "prd_name": _product_name(order),
+            "qte_prd": _qty(order),
             "comment": str(getattr(order, "courier_notes", "") or "").strip(),
             "note": str(getattr(order, "courier_notes", "") or "").strip(),
-            "client_order_ref": str(getattr(order, "id", "") or ""),
-            "open_package": 0,
+            "client_order_ref": code,
+            "open_package": 1,
         }
-        status_code, parsed, text = await self._post("/deliveries/store", payload)
-        tracking = _tracking_from(parsed)
-        failed = status_code >= 400 or (isinstance(parsed, dict) and parsed.get("success") is False)
-        if failed or not tracking:
-            detail = parsed.get("message") if isinstance(parsed, dict) else None
+        status_code, parsed, text = await self._post_store(payload)
+        tracking = _tracking_from(parsed) or (code if _store_succeeded(status_code, parsed) else "")
+        if not _store_succeeded(status_code, parsed) or not tracking:
             return {
                 "ok": False,
                 "tracking_number": tracking,
                 "ticket_url": "",
                 "carrier": self.carrier_id,
-                "error": detail or text or "quick_livraison_failed",
+                "error": _error_detail(parsed, text),
                 "raw": parsed,
             }
         return {
