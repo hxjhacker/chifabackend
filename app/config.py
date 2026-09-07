@@ -49,8 +49,9 @@ class Settings(BaseSettings):
     meta_livraison_base_url: str = "https://api.metalivraison.ma"
     meta_livraison_api_key: str = ""
     meta_livraison_api_secret: str = ""
-    meta_livraison_delivery_fee: float = 30.0
-    meta_livraison_return_fee: float = 15.0
+    meta_livraison_delivery_fee: float = 35.0
+    meta_livraison_return_fee: float = 0.0
+    meta_livraison_refusal_fee: float = 10.0
 
     @property
     def sqlalchemy_url(self) -> str:

@@ -27,10 +27,10 @@ from app.security import (
     verify_credentials,
 )
 from app.schemas import OrderUpdate
-from app.config import settings
 from app.services.pricing import cents_to_mad
 from app.services.page_views import observatory_stats
 from app.services.logistics_analytics import logistics_analytics
+from app.services.city_tarifs import load_tarif_index, serialize_tarifs, sync_meta_city_tarifs
 from app.services.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -540,11 +540,28 @@ def admin_logistics_analytics(
     session: Session = Depends(get_session),
 ):
     _ = admin
-    return logistics_analytics(
-        session,
-        delivery_fee=settings.meta_livraison_delivery_fee,
-        return_fee=settings.meta_livraison_return_fee,
-    )
+    return logistics_analytics(session)
+
+
+@router.get("/city-tarifs")
+def admin_city_tarifs(
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    tarifs = serialize_tarifs(session)
+    return {"count": len(tarifs), "tarifs": tarifs, "source": "FES"}
+
+
+@router.post("/city-tarifs/sync")
+def admin_sync_city_tarifs(
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    report = sync_meta_city_tarifs(session)
+    session.commit()
+    return report
 
 
 @router.get("/views")
@@ -889,10 +906,10 @@ def _tracking_code(order: Order) -> str:
     return str(getattr(order, "meta_livraison_code", "") or "").strip()
 
 
-def _pdf_labels(orders: list[Order], filename: str, inline: bool = False) -> Response:
+def _pdf_labels(session: Session, orders: list[Order], filename: str, inline: bool = False) -> Response:
     from app.services.shipping_label import render_label_pdf
 
-    payload = render_label_pdf(orders)
+    payload = render_label_pdf(orders, load_tarif_index(session))
     disposition = "inline" if inline else "attachment"
     return Response(
         content=payload,
@@ -913,7 +930,7 @@ def admin_label_pdf(
         raise HTTPException(status_code=404, detail="order_not_found")
     if not _tracking_code(order):
         raise HTTPException(status_code=400, detail=LABEL_NOT_DISPATCHED)
-    return _pdf_labels([order], f"label-{_tracking_code(order)}.pdf", inline=True)
+    return _pdf_labels(session, [order], f"label-{_tracking_code(order)}.pdf", inline=True)
 
 
 @router.post("/orders/bulk-labels-pdf")
@@ -939,7 +956,7 @@ def admin_bulk_labels_pdf(
         ready.append(order)
     if not ready:
         raise HTTPException(status_code=400, detail=LABEL_NOT_DISPATCHED)
-    return _pdf_labels(ready, "chifaglow-labels.pdf", inline=True)
+    return _pdf_labels(session, ready, "chifaglow-labels.pdf", inline=True)
 
 
 @router.post("/orders/manifest")

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import threading
 import traceback
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -16,7 +17,7 @@ from app.api.tracking import router as tracking_router
 from app.routers.admin import router as admin_router
 from app.config import settings
 from app.db import engine, ensure_order_columns
-from app.models import Order, OrderItem, Product, TrackingEvent, PageView, PushSubscription  # noqa: F401
+from app.models import CityTarif, Order, OrderItem, Product, TrackingEvent, PageView, PushSubscription  # noqa: F401
 from app.seed import seed_products
 
 
@@ -38,8 +39,21 @@ async def lifespan(_: FastAPI):
             replace_existing=True,
             max_instances=1,
         )
+        from app.services.city_tarifs import run_scheduled_city_tarif_sync
+
+        scheduler.add_job(
+            run_scheduled_city_tarif_sync,
+            "interval",
+            hours=24,
+            id="meta_city_tarifs",
+            replace_existing=True,
+            max_instances=1,
+            kwargs={"force": True},
+        )
         scheduler.start()
+        threading.Thread(target=lambda: run_scheduled_city_tarif_sync(False), daemon=True, name="city-tarifs-boot").start()
         print("[META_TRACKING_SYNC] scheduler started (every 2 hours)", flush=True)
+        print("[CITY_TARIFS] scheduler started (boot if empty, then every 24 hours)", flush=True)
     except Exception:
         traceback.print_exc()
     yield

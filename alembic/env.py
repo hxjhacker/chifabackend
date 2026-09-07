@@ -6,7 +6,7 @@ from alembic import context
 from sqlmodel import SQLModel
 
 from app.config import settings
-from app.models import Order, OrderItem, Product, TrackingEvent as TrackingEvent  # noqa: F401
+from app.models import CityTarif, Order, OrderItem, Product, TrackingEvent as TrackingEvent  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

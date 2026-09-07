@@ -74,6 +74,19 @@ class Order(SQLModel, table=True):
     items: list["OrderItem"] = Relationship(back_populates="order")
 
 
+class CityTarif(SQLModel, table=True):
+    __tablename__ = "city_tarifs"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    meta_city_id: str = Field(index=True, unique=True, max_length=32)
+    city_name: str = Field(index=True, max_length=160)
+    delivery_fee: float = 35.0
+    refusal_fee: float = 10.0
+    return_fee: float = 0.0
+    hub_name: str | None = Field(default=None, max_length=120)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class OrderItem(SQLModel, table=True):
     __tablename__ = "order_items"
 

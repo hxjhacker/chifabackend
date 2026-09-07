@@ -18,6 +18,7 @@ from reportlab.pdfgen import canvas
 
 from app.services.meta_livraison import parcel_code
 from app.services.meta_livraison_cities import has_arabic, latin_ville
+from app.services.city_tarifs import TarifIndex
 from app.services.pricing import cents_to_mad
 from app.utils.regions import region_id_for_city
 
@@ -187,10 +188,14 @@ def _canon_hub(raw: str) -> str:
     return ""
 
 
-def destination_hub(order: Any) -> str:
+def destination_hub(order: Any, tarifs: TarifIndex | None = None) -> str:
     shipping = str(getattr(order, "shipping_city", "") or "").strip()
     raw_city = str(getattr(order, "city", "") or "").strip()
     official = latin_ville(shipping, raw_city)
+    if tarifs:
+        hub = tarifs.hub_for(shipping, official, raw_city)
+        if hub:
+            return hub
     for candidate in (shipping, official, raw_city):
         text = str(candidate or "").strip()
         if not text:
@@ -208,7 +213,10 @@ def destination_hub(order: Any) -> str:
         if hub in HUB_CANON.values():
             return hub
     region = str(getattr(order, "region_id", "") or "").strip().upper() or region_id_for_city(official) or region_id_for_city(raw_city)
-    return REGION_HUB.get(region, "FES")
+    if REGION_HUB.get(region):
+        return REGION_HUB[region]
+    named = (official or raw_city).strip().upper()
+    return named or "FES"
 
 
 def _phone(order: Any) -> str:
@@ -283,12 +291,12 @@ def _qr_image(payload: str) -> ImageReader:
     return ImageReader(buf)
 
 
-def _draw_page(c: canvas.Canvas, order: Any) -> None:
+def _draw_page(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) -> None:
     _ensure_fonts()
     w, h = PAGE
     m = 3.2 * mm
     tracking = tracking_of(order)
-    hub = destination_hub(order)
+    hub = destination_hub(order, tarifs)
     code = parcel_code(str(getattr(order, "id", "") or "ORDER"))
     today = datetime.now(TZ).strftime("%d/%m/%Y")
     notes = str(getattr(order, "courier_notes", "") or "").strip() or "—"
@@ -436,7 +444,7 @@ def _draw_page(c: canvas.Canvas, order: Any) -> None:
     c.drawCentredString(w / 2, 2.2 * mm, DISCLAIMER)
 
 
-def render_label_pdf(orders: list[Any]) -> bytes:
+def render_label_pdf(orders: list[Any], tarifs: TarifIndex | None = None) -> bytes:
     if not orders:
         raise ValueError("no_labels")
     buf = BytesIO()
@@ -445,6 +453,6 @@ def render_label_pdf(orders: list[Any]) -> bytes:
     for index, order in enumerate(orders):
         if index:
             c.showPage()
-        _draw_page(c, order)
+        _draw_page(c, order, tarifs)
     c.save()
     return buf.getvalue()
