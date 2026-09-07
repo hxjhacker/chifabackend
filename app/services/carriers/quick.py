@@ -10,7 +10,6 @@ from app.db import engine
 from app.models import CityTarif
 from app.services.carriers.base import ShippingCarrierBase
 from app.services.city_tarifs import fold_city
-from app.services.pricing import cents_to_mad
 
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE"}
 
@@ -30,6 +29,32 @@ def _national_phone(phone: str, phone_national: str) -> str:
     elif len(digits) == 9 and digits[0] in "567":
         digits = "0" + digits
     return digits
+
+
+def _order_amount(order: Any) -> float:
+    """Cash-on-delivery amount in MAD. Never cents, never a string, never None."""
+    if hasattr(order, "total_cents") and order.total_cents is not None:
+        try:
+            return round(float(order.total_cents) / 100.0, 2)
+        except (TypeError, ValueError):
+            pass
+    if hasattr(order, "total_price") and order.total_price is not None:
+        try:
+            return round(float(order.total_price), 2)
+        except (TypeError, ValueError):
+            pass
+    if hasattr(order, "price") and order.price is not None:
+        try:
+            return round(float(order.price), 2)
+        except (TypeError, ValueError):
+            pass
+    total_mad = getattr(order, "total_mad", None)
+    if total_mad is not None:
+        try:
+            return round(float(total_mad), 2)
+        except (TypeError, ValueError):
+            pass
+    return 0.0
 
 
 def _as_int(value: Any) -> int | None:
@@ -226,6 +251,7 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
             )
             if part
         ).strip()
+        order_amount = _order_amount(order)
         payload = {
             "district_id": district_id,
             "city_id": district_id,
@@ -235,8 +261,10 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
             "tel": phone,
             "address": address,
             "adresse": address,
-            "price": cents_to_mad(int(getattr(order, "total_cents", 0) or 0)),
-            "cod_amount": cents_to_mad(int(getattr(order, "total_cents", 0) or 0)),
+            "montant": order_amount,
+            "price": order_amount,
+            "prix": order_amount,
+            "cod_amount": order_amount,
             "comment": str(getattr(order, "courier_notes", "") or "").strip(),
             "note": str(getattr(order, "courier_notes", "") or "").strip(),
             "client_order_ref": str(getattr(order, "id", "") or ""),
