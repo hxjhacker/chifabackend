@@ -11,7 +11,14 @@ from typing import Any
 import httpx
 from pypdf import PdfReader, PdfWriter
 
-from app.services.meta_livraison_cities import FALLBACK_VILLE, has_arabic, is_official_meta_city, latin_ville
+from app.services.meta_livraison_cities import (
+    FALLBACK_VILLE,
+    fold_city,
+    has_arabic,
+    is_official_meta_city,
+    latin_ville,
+    resolve_meta_city,
+)
 
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE", "YOUR_API_SECRET_HERE"}
 DEFAULT_BASE = "https://api.metalivraison.ma/colis-service"
@@ -110,28 +117,18 @@ def latin_city(raw: str) -> str:
     return latin_ville(raw)
 
 
-_HUB_SUFFIX = re.compile(
-    r"\s*-\s*(FES|MEKNES|Beni Mellal|Beni-Mellal|Ouazzane|Nador|Taounate|Taza|Sefrou|"
-    r"Chefchaouen|Casa|Agadir|Marrakech|Errachidia|Khenifra|Tiznit|SAFI|El jadida|"
-    r"Had soualem|TAN TAN|SEFROU)$",
-    flags=re.IGNORECASE,
-)
-
-
-def sanitize_meta_city_name(city_name: str) -> str:
-    if not city_name:
-        return "FES"
-    lower = city_name.lower()
-    if "imouzzer" in lower and "marmoucha" in lower:
-        return "Imouzzer Marmoucha"
-    if "imouzzer" in lower:
-        return "Imouzzer Kandar"
-    cleaned = _HUB_SUFFIX.sub("", city_name)
-    if " - " in cleaned:
-        cleaned = cleaned.split(" - ", 1)[0]
-    cleaned = cleaned.replace("-", " ")
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned or "FES"
+def _official_ville(*candidates: str) -> str:
+    """Return Meta's exact official city string. Never strip hubs or dashes."""
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if not text:
+            continue
+        if is_official_meta_city(text) and not has_arabic(text):
+            return text
+        resolved = resolve_meta_city(text)
+        if resolved and is_official_meta_city(resolved) and not has_arabic(resolved):
+            return resolved
+    return FALLBACK_VILLE
 
 
 def sanitize_meta_address(address: str) -> str:
@@ -164,15 +161,13 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
         getattr(order, "meta_city", None),
         fallback="",
     )
-    ville = latin_ville(shipping_city, raw_city)
-    unmapped = (not is_official_meta_city(raw_city)) or has_arabic(raw_city)
-    if has_arabic(ville) or not is_official_meta_city(ville):
-        ville = FALLBACK_VILLE
-    official_ville = ville
-    ville = sanitize_meta_city_name(ville)
+    ville = _official_ville(shipping_city, raw_city)
+    unmapped = ville == FALLBACK_VILLE and not (
+        is_official_meta_city(shipping_city) or is_official_meta_city(raw_city)
+    )
     print(
         f"[META_LIVRAISON_CITY] raw={raw_city!r} shipping={shipping_city!r} "
-        f"official={official_ville!r} sent={ville!r} unmapped={unmapped}",
+        f"official={ville!r} sent={ville!r} unmapped={unmapped}",
         flush=True,
     )
     raw_address = _text(getattr(order, "address", None), fallback="")
@@ -180,7 +175,7 @@ def build_payload(order: Any, phone: str) -> dict[str, Any]:
         address = ville or "Centre Ville"
     else:
         address = raw_address
-    if unmapped:
+    if raw_city and fold_city(raw_city) != fold_city(ville):
         address = _append_locality(address, raw_city, ville)
     address = sanitize_meta_address(address)
     slug = _text(getattr(order, "product_slug", None))

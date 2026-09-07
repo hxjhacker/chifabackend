@@ -273,6 +273,15 @@ CITY_ALIASES = {
     "imouzzer-kandar": "Imouzzer-Kandar - FES",
     "imouzar kandar": "Imouzzer-Kandar - FES",
     "imouzzer kender": "Imouzzer-Kandar - FES",
+    "ait sebaa": "Sefrou",
+    "ait sebaa lajrouf": "Sefrou",
+    "ait sebaa lajrouf sefrou": "Sefrou",
+    "lajrouf sefrou": "Sefrou",
+    "lajrouf": "Sefrou",
+    "آيت السبع": "Sefrou",
+    "ايت السبع": "Sefrou",
+    "آيت سبع": "Sefrou",
+    "الجروف": "Sefrou",
     "أولاد الطيب": "Oulad Tayeb - FES",
     "اولاد الطيب": "Oulad Tayeb - FES",
     "دويات": "Douiyat - FES",
@@ -497,6 +506,14 @@ def resolve_meta_city(raw: str) -> str:
         hit = _lookup_skeleton(folded)
         if hit:
             return hit
+
+    parts = folded.split()
+    if len(parts) >= 2:
+        for i in range(1, len(parts)):
+            tail = " ".join(parts[i:])
+            hit = _lookup_folded(tail)
+            if hit:
+                return hit
 
     return original
 

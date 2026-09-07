@@ -38,6 +38,7 @@ from app.services.carriers import (
     run_sync,
 )
 from app.services.carriers.quick import sync_quick_districts
+from app.services.meta_livraison_cities import is_official_meta_city, resolve_meta_city
 from app.services.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -435,9 +436,23 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
             raise HTTPException(status_code=422, detail="invalid_name")
         _assign(order, known, "full_name", name)
     if "city" in data and data["city"]:
-        _assign(order, known, "city", str(data["city"]).strip()[:120])
+        city_val = str(data["city"]).strip()[:160]
+        if len(city_val) < 2:
+            raise HTTPException(status_code=422, detail="invalid_city")
+        _assign(order, known, "city", city_val)
+        if "shipping_city" not in data:
+            official = city_val if is_official_meta_city(city_val) else resolve_meta_city(city_val)
+            if official and is_official_meta_city(official):
+                _assign(order, known, "shipping_city", official)
+                region_id = region_id_for_city(official)
+                if region_id:
+                    _assign(order, known, "region_id", region_id)
     if "shipping_city" in data:
         shipping = str(data["shipping_city"] or "").strip()[:160] or None
+        if shipping and not is_official_meta_city(shipping):
+            resolved = resolve_meta_city(shipping)
+            if resolved and is_official_meta_city(resolved):
+                shipping = resolved
         _assign(order, known, "shipping_city", shipping)
         if shipping:
             region_id = region_id_for_city(shipping)
@@ -863,7 +878,18 @@ def admin_update_order(
         session.rollback()
         data = body
         name = str(data.get("full_name") or data.get("customer_name") or data.get("fullName") or order.full_name or "").strip()[:160]
-        city = str(data.get("city") or order.city or "").strip()[:120]
+        city = str(data.get("city") or data.get("ville") or order.city or "").strip()[:160]
+        shipping = data.get("shipping_city")
+        if shipping is None:
+            shipping = data.get("shippingCity") if "shippingCity" in data else data.get("meta_city")
+        if shipping is not None:
+            shipping = str(shipping or "").strip()[:160] or None
+        else:
+            shipping = getattr(order, "shipping_city", None)
+            if city and (not shipping or city != order.city):
+                official = city if is_official_meta_city(city) else resolve_meta_city(city)
+                if official and is_official_meta_city(official):
+                    shipping = official
         slug = str(data.get("product_slug") or data.get("primary_product") or data.get("productSlug") or order.product_slug)
         qty = int(data.get("tier_qty") or data.get("primary_qty") or data.get("tierQty") or order.tier_qty or 1)
         total = data.get("total_mad") if data.get("total_mad") is not None else data.get("total_price") or data.get("totalMad") or data.get("totalPrice")
@@ -878,6 +904,7 @@ def admin_update_order(
                     UPDATE orders SET
                       full_name = :full_name,
                       city = :city,
+                      shipping_city = :shipping_city,
                       product_slug = :product_slug,
                       tier_qty = :tier_qty,
                       total_cents = :total_cents,
@@ -890,6 +917,7 @@ def admin_update_order(
                     "id": str(order.id),
                     "full_name": name or order.full_name,
                     "city": city or order.city,
+                    "shipping_city": shipping,
                     "product_slug": slug,
                     "tier_qty": qty,
                     "total_cents": cents,

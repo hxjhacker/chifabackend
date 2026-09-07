@@ -10,8 +10,10 @@ from app.db import engine
 from app.models import CityTarif
 from app.services.carriers.base import ShippingCarrierBase
 from app.services.city_tarifs import fold_city
+from app.services.meta_livraison_cities import resolve_meta_city
 
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE"}
+HUB_CITY_FOLDS = ("fes", "fez", "fas", "fès")
 
 
 def _api_key() -> str:
@@ -182,6 +184,70 @@ def _city_name(row: dict[str, Any]) -> str:
     return ""
 
 
+def _candidate_city_names(order: Any) -> list[str]:
+    seen: set[str] = set()
+    names: list[str] = []
+    for attr in ("shipping_city", "city"):
+        raw = str(getattr(order, attr, "") or "").strip()
+        if not raw:
+            continue
+        extras = [raw, resolve_meta_city(raw)]
+        parts = fold_city(raw).split()
+        if len(parts) >= 2:
+            extras.append(parts[-1])
+        for name in extras:
+            text = str(name or "").strip()
+            key = fold_city(text)
+            if not text or key in seen:
+                continue
+            seen.add(key)
+            names.append(text)
+    return names
+
+
+def _district_from_mapping(mapping: dict[str, int], names: list[str]) -> int | None:
+    for name in names:
+        key = fold_city(name)
+        found = mapping.get(key) or mapping.get(key.replace(" ", ""))
+        if found:
+            return found
+    return None
+
+
+def _hub_district(mapping: dict[str, int]) -> int | None:
+    for key in HUB_CITY_FOLDS:
+        found = mapping.get(key) or mapping.get(key.replace(" ", ""))
+        if found:
+            return found
+    return None
+
+
+def _mapping_from_tarif_rows(rows: list[Any]) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    for row in rows:
+        district_id = _as_int(getattr(row, "quick_district_id", None))
+        name = str(getattr(row, "city_name", "") or "").strip()
+        if not district_id or not name:
+            continue
+        key = fold_city(name)
+        mapping[key] = district_id
+        mapping[key.replace(" ", "")] = district_id
+    return mapping
+
+
+def _mapping_from_city_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    for row in rows:
+        district_id = _district_id(row)
+        name = _city_name(row)
+        if not district_id or not name:
+            continue
+        key = fold_city(name)
+        mapping[key] = district_id
+        mapping[key.replace(" ", "")] = district_id
+    return mapping
+
+
 def _tracking_from(payload: Any) -> str:
     if isinstance(payload, dict):
         for key in (
@@ -294,34 +360,19 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         return res.status_code, _parse_http_body(res), res.text
 
     def _district_from_db(self, order: Any) -> int | None:
-        names = [
-            str(getattr(order, "shipping_city", "") or "").strip(),
-            str(getattr(order, "city", "") or "").strip(),
-        ]
-        keys = [fold_city(name) for name in names if name]
-        if not keys:
-            return None
+        names = _candidate_city_names(order)
         with Session(engine) as session:
-            rows = session.exec(select(CityTarif)).all()
-            by_fold = {fold_city(str(row.city_name or "")): row for row in rows if row.city_name}
-            for key in keys:
-                hit = by_fold.get(key) or by_fold.get(key.replace(" ", ""))
-                if hit and hit.quick_district_id:
-                    return int(hit.quick_district_id)
-        return None
+            mapping = _mapping_from_tarif_rows(list(session.exec(select(CityTarif)).all()))
+        return _district_from_mapping(mapping, names) or _hub_district(mapping)
 
     async def resolve_district_id(self, order: Any) -> int | None:
         stored = self._district_from_db(order)
         if stored:
             return stored
         payload = await self._get("/getCityIDs")
-        wanted = {fold_city(str(getattr(order, name, "") or "")) for name in ("shipping_city", "city")}
-        wanted.discard("")
-        for row in _city_rows(payload):
-            name = fold_city(_city_name(row))
-            if name and name in wanted:
-                return _district_id(row)
-        return None
+        mapping = _mapping_from_city_rows(_city_rows(payload))
+        names = _candidate_city_names(order)
+        return _district_from_mapping(mapping, names) or _hub_district(mapping)
 
     async def create_shipment(self, order: Any) -> dict[str, Any]:
         if not self.is_configured():

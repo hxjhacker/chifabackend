@@ -35,6 +35,7 @@ ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_sent_at timestamptz",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_ticket_url text",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_city varchar(160)",
+    "ALTER TABLE orders ALTER COLUMN city TYPE varchar(160)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier varchar(50) DEFAULT 'meta_livraison' NOT NULL",
     "CREATE INDEX IF NOT EXISTS ix_orders_carrier ON orders (carrier)",
 )
