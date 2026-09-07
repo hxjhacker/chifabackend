@@ -30,7 +30,7 @@ from app.schemas import OrderUpdate
 from app.services.pricing import cents_to_mad
 from app.services.page_views import observatory_stats
 from app.services.logistics_analytics import logistics_analytics
-from app.services.city_tarifs import load_tarif_index, serialize_tarifs, sync_meta_city_tarifs
+from app.services.city_tarifs import list_lookup_tarifs, load_tarif_index, serialize_tarifs, sync_meta_city_tarifs
 from app.services.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -551,6 +551,17 @@ def admin_logistics_analytics(
 ):
     _ = admin
     return logistics_analytics(session)
+
+
+@router.get("/tarifs")
+def admin_tarifs_lookup(
+    search: str = Query(default="", max_length=80),
+    limit: int = Query(default=50, ge=1, le=200),
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    return list_lookup_tarifs(session, search=search, limit=limit)
 
 
 @router.get("/city-tarifs")
