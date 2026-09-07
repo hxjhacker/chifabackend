@@ -35,6 +35,8 @@ ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_sent_at timestamptz",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS meta_livraison_ticket_url text",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_city varchar(160)",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier varchar(50) DEFAULT 'meta_livraison' NOT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_orders_carrier ON orders (carrier)",
 )
 
 PAGE_VIEWS_SQL = (
@@ -75,11 +77,14 @@ CITY_TARIFS_SQL = (
       refusal_fee double precision NOT NULL DEFAULT 10,
       return_fee double precision NOT NULL DEFAULT 0,
       hub_name varchar(120),
+      quick_district_id integer,
       updated_at timestamptz NOT NULL DEFAULT now()
     )
     """,
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_city_tarifs_meta_city_id ON city_tarifs (meta_city_id)",
     "CREATE INDEX IF NOT EXISTS ix_city_tarifs_city_name ON city_tarifs (city_name)",
+    "ALTER TABLE city_tarifs ADD COLUMN IF NOT EXISTS quick_district_id integer",
+    "CREATE INDEX IF NOT EXISTS ix_city_tarifs_quick_district_id ON city_tarifs (quick_district_id)",
 )
 
 

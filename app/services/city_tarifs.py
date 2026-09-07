@@ -130,6 +130,7 @@ def serialize_tarifs(session: Session) -> list[dict[str, Any]]:
             "return_fee": _money(row.return_fee, DEFAULT_RETURN_FEE),
             "hub_name": row.hub_name or "",
             "hub_code": hub_code(row.hub_name),
+            "quick_district_id": getattr(row, "quick_district_id", None),
         }
         for row in rows
     ]

@@ -70,6 +70,7 @@ class Order(SQLModel, table=True):
     meta_livraison_code: str | None = Field(default=None, max_length=80)
     meta_livraison_sent_at: datetime | None = Field(default=None)
     meta_livraison_ticket_url: str | None = Field(default=None)
+    carrier: str = Field(default="meta_livraison", max_length=50, index=True)
 
     items: list["OrderItem"] = Relationship(back_populates="order")
 
@@ -84,6 +85,7 @@ class CityTarif(SQLModel, table=True):
     refusal_fee: float = 10.0
     return_fee: float = 0.0
     hub_name: str | None = Field(default=None, max_length=120)
+    quick_district_id: int | None = Field(default=None, index=True)
     updated_at: datetime = Field(default_factory=utcnow)
 
 

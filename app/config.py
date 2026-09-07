@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     meta_livraison_return_fee: float = 0.0
     meta_livraison_refusal_fee: float = 10.0
 
+    quick_livraison_api_url: str = "https://clients.quicklivraison.ma/api"
+    quick_livraison_api_key: str = "6sD6fVFImLf0SyE2pzBMdOuiNqUHEJyE"
+    forcelog_api_url: str = "https://api.forcelog.ma"
+    forcelog_api_key: str = ""
+
     @property
     def sqlalchemy_url(self) -> str:
         return _to_sqlalchemy(self.database_url)

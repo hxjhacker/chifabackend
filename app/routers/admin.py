@@ -31,6 +31,13 @@ from app.services.pricing import cents_to_mad
 from app.services.page_views import observatory_stats
 from app.services.logistics_analytics import logistics_analytics
 from app.services.city_tarifs import list_lookup_tarifs, load_tarif_index, serialize_tarifs, sync_meta_city_tarifs
+from app.services.carriers import (
+    carrier_catalog,
+    get_carrier,
+    normalize_carrier,
+    run_sync,
+)
+from app.services.carriers.quick import sync_quick_districts
 from app.services.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -68,6 +75,7 @@ class AdminLoginIn(BaseModel):
 class BulkOrderIds(BaseModel):
     order_ids: list[str] = Field(default_factory=list)
     tracking_numbers: list[str] = Field(default_factory=list)
+    carrier: str | None = None
 
 
 def _display_status(raw: str) -> str:
@@ -183,6 +191,8 @@ def _serialize_order(order: Order) -> dict:
         "meta_livraison_code": getattr(order, "meta_livraison_code", None),
         "meta_livraison_sent_at": _iso(getattr(order, "meta_livraison_sent_at", None)),
         "meta_livraison_ticket_url": getattr(order, "meta_livraison_ticket_url", None),
+        "carrier": normalize_carrier(getattr(order, "carrier", None)),
+        "tracking_number": getattr(order, "meta_livraison_code", None),
     }
 
 
@@ -307,12 +317,15 @@ def _persist_shipped(
     ticket_url: str | None,
     *,
     commit: bool = True,
+    carrier: str | None = None,
 ) -> None:
     cols = _order_column_names(session)
     now = datetime.now(timezone.utc)
+    carrier_id = normalize_carrier(carrier or getattr(order, "carrier", None))
     _assign(order, cols, "meta_livraison_code", code)
     _assign(order, cols, "meta_livraison_ticket_url", ticket_url)
     _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
+    _assign(order, cols, "carrier", carrier_id)
     _assign(order, cols, "status", "shipped")
     _stamp_status(order, "shipped", cols)
     _assign(order, cols, "updated_at", now)
@@ -327,14 +340,14 @@ def _dispatch_one(
     session: Session,
     order: Order,
     *,
-    api_key: str,
-    api_secret: str,
-    base_url: str,
     require_confirmed: bool,
     commit: bool = True,
+    carrier: str | None = None,
+    api_key: str = "",
+    api_secret: str = "",
+    base_url: str = "",
 ) -> dict[str, Any]:
-    from app.services.meta_livraison import create_colis
-
+    _ = (api_key, api_secret, base_url)
     order_id = str(order.id)
     status_now = _display_status(str(getattr(order, "status", "") or ""))
     city = str(getattr(order, "city", "") or "").strip()
@@ -344,19 +357,41 @@ def _dispatch_one(
     if len(city) < 2:
         return {"order_id": order_id, "success": False, "tracking": "", "error": "invalid_city"}
     if existing:
-        return {"order_id": order_id, "success": True, "tracking": existing, "error": ""}
+        return {
+            "order_id": order_id,
+            "success": True,
+            "tracking": existing,
+            "error": "",
+            "carrier": normalize_carrier(getattr(order, "carrier", None)),
+        }
     if require_confirmed and status_now not in ("confirmed", "shipped"):
         return {"order_id": order_id, "success": False, "tracking": "", "error": "order_not_confirmed"}
     if not _has_complete_confirm_details(order):
         return {"order_id": order_id, "success": False, "tracking": "", "error": "confirmation_details_required"}
-    result = create_colis(order, api_key=api_key, api_secret=api_secret, base_url=base_url)
+    carrier_id = normalize_carrier(carrier or getattr(order, "carrier", None))
+    adapter = get_carrier(carrier_id)
+    if not adapter.is_configured():
+        return {
+            "order_id": order_id,
+            "success": False,
+            "tracking": "",
+            "error": f"{carrier_id}_not_configured",
+            "carrier": carrier_id,
+        }
+    result = run_sync(adapter.create_shipment(order))
     if not result.get("ok"):
-        err = _detail_text(result.get("detail") if result.get("detail") not in (None, "") else result.get("text"))
-        return {"order_id": order_id, "success": False, "tracking": "", "error": err or "meta_livraison_failed"}
-    code = str(result.get("code") or "").strip() or str(order.id).replace("-", "")[:8].upper()
+        err = _detail_text(result.get("error") if result.get("error") not in (None, "") else result.get("raw"))
+        return {
+            "order_id": order_id,
+            "success": False,
+            "tracking": "",
+            "error": err or "shipment_failed",
+            "carrier": carrier_id,
+        }
+    code = str(result.get("tracking_number") or "").strip() or str(order.id).replace("-", "")[:8].upper()
     ticket_url = str(result.get("ticket_url") or "").strip() or None
-    _persist_shipped(session, order, code, ticket_url, commit=commit)
-    return {"order_id": order_id, "success": True, "tracking": code, "error": ""}
+    _persist_shipped(session, order, code, ticket_url, commit=commit, carrier=carrier_id)
+    return {"order_id": order_id, "success": True, "tracking": code, "error": "", "carrier": carrier_id}
 
 
 def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols: set[str] | None = None) -> Order:
@@ -430,6 +465,8 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
         _assign(order, known, "address", (str(data["address"]) if data["address"] is not None else "").strip() or None)
     if "region_id" in data and "shipping_city" not in data:
         _assign(order, known, "region_id", _resolve_region(str(data["region_id"]) if data["region_id"] is not None else None))
+    if "carrier" in data and data["carrier"]:
+        _assign(order, known, "carrier", normalize_carrier(str(data["carrier"])))
     if "bundle_enabled" in data:
         _assign(order, known, "bundle_enabled", bool(data["bundle_enabled"]))
     if "secondary_qty" in data and data["secondary_qty"]:
@@ -583,6 +620,23 @@ def admin_sync_city_tarifs(
     report = sync_meta_city_tarifs(session)
     session.commit()
     return report
+
+
+@router.get("/carriers")
+def admin_carriers(admin: dict = Depends(get_current_admin)):
+    _ = admin
+    return {"carriers": carrier_catalog()}
+
+
+@router.post("/carriers/quick-livraison/sync-cities")
+def admin_sync_quick_cities(
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    if not get_carrier("quick_livraison").is_configured():
+        raise HTTPException(status_code=400, detail="quick_livraison_not_configured")
+    return sync_quick_districts(session)
 
 
 @router.get("/views")
@@ -862,12 +916,11 @@ def admin_bulk_livraison(
     tokens = _bulk_tokens(payload)
     if not tokens:
         raise HTTPException(status_code=422, detail="order_ids_required")
-    from app.services.meta_livraison import configured, debug_credentials
-
-    api_key, api_secret, base_url = _meta_creds()
-    debug_credentials(api_key, api_secret, base_url)
-    if not configured(api_key, api_secret):
-        raise HTTPException(status_code=400, detail="meta_livraison_not_configured")
+    carrier_id = normalize_carrier(payload.carrier) if payload.carrier else None
+    if carrier_id:
+        adapter = get_carrier(carrier_id)
+        if not adapter.is_configured():
+            raise HTTPException(status_code=400, detail=f"{carrier_id}_not_configured")
 
     results: list[dict[str, Any]] = []
     for token in tokens:
@@ -881,11 +934,9 @@ def admin_bulk_livraison(
                     _dispatch_one(
                         session,
                         order,
-                        api_key=api_key,
-                        api_secret=api_secret,
-                        base_url=base_url,
                         require_confirmed=True,
                         commit=False,
+                        carrier=carrier_id,
                     )
                 )
             session.commit()
@@ -909,10 +960,7 @@ def admin_sync_tracking(admin: dict = Depends(get_current_admin)):
     _ = admin
     from app.services.tracking_sync import sync_shipped_orders
 
-    api_key, api_secret, base_url = _meta_creds()
-    report = sync_shipped_orders(api_key=api_key, api_secret=api_secret, base_url=base_url)
-    if report.get("error") == "meta_livraison_not_configured":
-        raise HTTPException(status_code=400, detail="meta_livraison_not_configured")
+    report = sync_shipped_orders()
     return report
 
 
@@ -1029,19 +1077,17 @@ async def admin_send_livraison(order_id: str, request: Request):
                     status_code=exc.status_code,
                 )
 
-            from app.services.meta_livraison import configured, debug_credentials
+            body: dict[str, Any] = {}
+            try:
+                raw = await request.body()
+                if raw:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict):
+                        body = parsed
+            except Exception:
+                body = {}
+            carrier = body.get("carrier") if body else None
 
-            api_key, api_secret, base_url = _meta_creds()
-            print(f"[DEBUG META LIVRAISON] Base URL: {base_url}", flush=True)
-            print(f"[DEBUG META LIVRAISON] Key length: {len(api_key)}, Key prefix: {api_key[:6]}...", flush=True)
-            print(f"[DEBUG META LIVRAISON] Secret length: {len(api_secret)}, Secret prefix: {api_secret[:6]}...", flush=True)
-            debug_credentials(api_key, api_secret, base_url)
-
-            if not configured(api_key, api_secret):
-                return JSONResponse(
-                    {"success": False, "detail": "META_LIVRAISON_API_KEY or META_LIVRAISON_API_SECRET is missing"},
-                    status_code=400,
-                )
             order = _load_order(session, order_id)
             if not order:
                 return JSONResponse({"success": False, "detail": "order_not_found"}, status_code=404)
@@ -1049,20 +1095,18 @@ async def admin_send_livraison(order_id: str, request: Request):
             outcome = _dispatch_one(
                 session,
                 order,
-                api_key=api_key,
-                api_secret=api_secret,
-                base_url=base_url,
                 require_confirmed=False,
+                carrier=str(carrier) if carrier else None,
             )
             if not outcome.get("success"):
-                detail = outcome.get("error") or "meta_livraison_failed"
+                detail = outcome.get("error") or "shipment_failed"
                 status_code = 404 if detail == "order_not_found" else 400
                 return JSONResponse(
                     status_code=status_code,
                     content=jsonable_encoder(
                         {
                             "success": False,
-                            "origin": "meta_livraison",
+                            "origin": outcome.get("carrier") or "carrier",
                             "detail": detail,
                         }
                     ),
