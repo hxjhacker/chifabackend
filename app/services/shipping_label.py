@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -10,36 +11,35 @@ import arabic_reshaper
 import qrcode
 from bidi.algorithm import get_display
 from reportlab.graphics.barcode import code128
+from reportlab.lib.colors import Color, black, white
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+from app.services.carriers import CARRIER_QUICK, normalize_carrier
+from app.services.city_tarifs import TarifIndex
 from app.services.meta_livraison import parcel_code
 from app.services.meta_livraison_cities import has_arabic, latin_ville
-from app.services.city_tarifs import TarifIndex
 from app.services.pricing import cents_to_mad
 from app.utils.regions import region_id_for_city
 
-PAGE = (100 * mm, 150 * mm)
+PAGE = (100 * mm, 100 * mm)
 TZ = ZoneInfo("Africa/Casablanca")
-SENDER_NAME = "CHIFA GLOW"
-SENDER_CODE = "7605"
-SENDER_PHONE = "06-20-86-38-95"
-DEPART_HUB = "FES"
+META_SENDER_NAME = "CHIFA GLOW"
+META_SENDER_CODE = "7605"
+META_SENDER_PHONE = "06-20-86-38-95"
+META_DEPART_HUB = "FES"
+QUICK_SENDER_NAME = "chifaglow"
+QUICK_SENDER_CODE = "7513"
+QUICK_SENDER_PHONE = "0644183475"
+QUICK_EXPEDITION = "CASA"
 TAGLINE = "بإرادتنا حلمكم يوصل"
 DISCLAIMER = "META LIVRAISON EST UNIQUEMENT UNE ENTREPRISE DE LIVRAISON."
-LABEL_NOT_DISPATCHED = "لا يمكن طباعة بوليصة شحن لطلبية لم يتم إرسالها لشركة التوصيل بعد."
-PRINT_HINT = "يجب إرسال الطلبية إلى Meta Livraison أولاً للحصول على رقم التتبع قبل الطباعة."
-
-PACK_NAMES = {
-    "quran": "USB القرآن الكريم",
-    "kids": "USB تعليم الأطفال",
-    "music": "USB الأغاني والموسيقى",
-    "educative": "الفلاشة التعليمية الذكية",
-    "extra": "مفتاح إضافي بسعر العرض",
-}
+BLUE = Color(0.12, 0.29, 0.56)
+NAVY = Color(0.09, 0.23, 0.43)
+GREEN = Color(0.18, 0.61, 0.29)
 
 REGION_HUB = {
     "MA01": "TANGER",
@@ -92,28 +92,42 @@ HUB_CANON = {
     "midelt": "ERRACHIDIA",
 }
 
-_FONTS_READY = False
+_FONTS: tuple[str, str] | None = None
 
 
 def tracking_of(order: Any) -> str:
-    return str(getattr(order, "meta_livraison_code", "") or "").strip()
+    return str(getattr(order, "meta_livraison_code", None) or getattr(order, "tracking_number", None) or "").strip()
 
 
-def _fonts_dir() -> str:
-    from pathlib import Path
-
-    return str(Path(__file__).resolve().parent.parent / "assets" / "fonts")
+def _font_files() -> list[tuple[Path, Path]]:
+    folder = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+    return [
+        (folder / "Amiri-Regular.ttf", folder / "Amiri-Bold.ttf"),
+        (Path("C:/Windows/Fonts/tahoma.ttf"), Path("C:/Windows/Fonts/tahomabd.ttf")),
+        (Path("C:/Windows/Fonts/arial.ttf"), Path("C:/Windows/Fonts/arialbd.ttf")),
+        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),
+        (Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"), Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf")),
+    ]
 
 
 def _ensure_fonts() -> tuple[str, str]:
-    global _FONTS_READY
-    regular, bold = "Amiri", "Amiri-Bold"
-    if not _FONTS_READY:
-        folder = _fonts_dir()
-        pdfmetrics.registerFont(TTFont(regular, f"{folder}/Amiri-Regular.ttf"))
-        pdfmetrics.registerFont(TTFont(bold, f"{folder}/Amiri-Bold.ttf"))
-        _FONTS_READY = True
-    return regular, bold
+    global _FONTS
+    if _FONTS:
+        return _FONTS
+    regular, bold = "Helvetica", "Helvetica-Bold"
+    for reg_path, bold_path in _font_files():
+        if not reg_path.exists():
+            continue
+        try:
+            pdfmetrics.registerFont(TTFont("LabelSans", str(reg_path)))
+            heavy = bold_path if bold_path.exists() else reg_path
+            pdfmetrics.registerFont(TTFont("LabelSans-Bold", str(heavy)))
+            regular, bold = "LabelSans", "LabelSans-Bold"
+            break
+        except Exception:
+            continue
+    _FONTS = (regular, bold)
+    return _FONTS
 
 
 def _shape(text: str) -> str:
@@ -121,15 +135,16 @@ def _shape(text: str) -> str:
     if not raw:
         return ""
     if has_arabic(raw):
-        return get_display(arabic_reshaper.reshape(raw))
+        try:
+            return get_display(arabic_reshaper.reshape(raw))
+        except Exception:
+            return raw
     return raw
 
 
 def _font_for(text: str, bold: bool = False) -> str:
-    if has_arabic(text):
-        regular, heavy = _ensure_fonts()
-        return heavy if bold else regular
-    return "Helvetica-Bold" if bold else "Helvetica"
+    regular, heavy = _ensure_fonts()
+    return heavy if bold else regular
 
 
 def _width(text: str, font: str, size: float) -> float:
@@ -161,7 +176,16 @@ def _wrap(text: str, font: str, size: float, max_w: float, max_lines: int = 3) -
     return lines
 
 
-def _draw_text(c: canvas.Canvas, text: str, x: float, y: float, size: float, *, bold: bool = False, align: str = "left"):
+def _draw_text(
+    c: canvas.Canvas,
+    text: str,
+    x: float,
+    y: float,
+    size: float,
+    *,
+    bold: bool = False,
+    align: str = "left",
+) -> None:
     font = _font_for(text, bold)
     c.setFont(font, size)
     shaped = _shape(text)
@@ -183,7 +207,7 @@ def _canon_hub(raw: str) -> str:
     for alias, hub in HUB_CANON.items():
         if alias.replace(" ", "") == compact:
             return hub
-    if key.upper() in {v for v in HUB_CANON.values()}:
+    if key.upper() in set(HUB_CANON.values()):
         return key.upper()
     return ""
 
@@ -195,7 +219,7 @@ def destination_hub(order: Any, tarifs: TarifIndex | None = None) -> str:
     if tarifs:
         hub = tarifs.hub_for(shipping, official, raw_city)
         if hub:
-            return hub
+            return re.sub(r"^HUB\s+", "", hub, flags=re.IGNORECASE).strip().upper() or hub
     for candidate in (shipping, official, raw_city):
         text = str(candidate or "").strip()
         if not text:
@@ -219,28 +243,32 @@ def destination_hub(order: Any, tarifs: TarifIndex | None = None) -> str:
     return named or "FES"
 
 
-def _phone(order: Any) -> str:
-    raw = str(getattr(order, "phone_national", "") or getattr(order, "phone", "") or "")
-    digits = re.sub(r"\D", "", raw)
+def _national_digits(raw: str) -> str:
+    digits = re.sub(r"\D", "", raw or "")
     if digits.startswith("212") and len(digits) >= 12:
-        digits = "0" + digits[3:12]
-    elif digits.startswith("0") and len(digits) >= 10:
-        digits = digits[:10]
-    elif len(digits) == 9:
-        digits = "0" + digits
-    if len(digits) == 10:
-        return f"{digits[0:2]}-{digits[2:4]}-{digits[4:6]}-{digits[6:8]}-{digits[8:10]}"
-    return raw.strip() or "—"
+        return "0" + digits[3:12]
+    if digits.startswith("0") and len(digits) >= 10:
+        return digits[:10]
+    if len(digits) == 9:
+        return "0" + digits
+    return digits
+
+
+def _phone(order: Any, pattern: str = "meta") -> str:
+    raw = str(getattr(order, "phone_national", "") or getattr(order, "phone", "") or "")
+    digits = _national_digits(raw)
+    if len(digits) != 10:
+        return raw.strip() or "—"
+    if pattern == "quick":
+        return f"{digits[0:2]}-{digits[2:5]}-{digits[5:8]}-{digits[8:10]}"
+    return f"{digits[0:2]}-{digits[2:4]}-{digits[4:6]}-{digits[6:8]}-{digits[8:10]}"
 
 
 def _address(order: Any) -> str:
     stored = str(getattr(order, "address", None) or getattr(order, "full_address", None) or "").strip()
     if stored:
         return stored
-    bits = [
-        str(getattr(order, field, None) or "").strip()
-        for field in ("quartier", "street", "building", "landmark")
-    ]
+    bits = [str(getattr(order, field, None) or "").strip() for field in ("quartier", "street", "building", "landmark")]
     return "، ".join(part for part in bits if part) or "—"
 
 
@@ -248,41 +276,54 @@ def _ville(order: Any) -> str:
     return latin_ville(
         str(getattr(order, "shipping_city", "") or ""),
         str(getattr(order, "city", "") or ""),
-    )
+    ).upper() or "—"
 
 
-def _goods(order: Any) -> str:
-    slug = str(getattr(order, "product_slug", "") or "")
-    qty = int(getattr(order, "tier_qty", None) or 1)
-    name = PACK_NAMES.get(slug, slug or "Produit")
-    parts = [f"{name} × {max(qty, 1)}"]
-    extra = str(getattr(order, "cross_sell_slug", "") or "").strip()
-    if extra:
+def _sku_lines(order: Any) -> list[tuple[str, int]]:
+    slug = str(getattr(order, "product_slug", "") or "").strip() or "Produit"
+    qty = int(getattr(order, "tier_qty", None) or getattr(order, "quantity", None) or 1)
+    lines = [(slug, max(qty, 1))]
+    extra = str(getattr(order, "cross_sell_slug", "") or getattr(order, "secondary_product", "") or "").strip()
+    if extra or bool(getattr(order, "bundle_enabled", False)):
         extra_qty = int(getattr(order, "secondary_qty", None) or 1)
-        parts.append(f"{PACK_NAMES.get(extra, extra)} × {max(extra_qty, 1)}")
+        lines.append((extra or "extra", max(extra_qty, 1)))
     upsell = str(getattr(order, "upsell_slug", "") or "").strip()
     if upsell and upsell != extra:
-        parts.append(PACK_NAMES.get(upsell, upsell))
-    return " + ".join(parts)
+        lines.append((upsell, 1))
+    return lines
 
 
-def _cod(order: Any) -> str:
-    value = cents_to_mad(int(getattr(order, "total_cents", 0) or 0))
-    if float(value).is_integer():
-        return f"{int(value)} MAD"
-    return f"{value:.2f} MAD".replace(".00", "")
+def _meta_goods(order: Any) -> str:
+    return " | ".join(sku for sku, _qty in _sku_lines(order))
+
+
+def _quick_goods(order: Any) -> str:
+    return " | ".join(f"{sku} ({qty})" for sku, qty in _sku_lines(order))
+
+
+def _cod_number(order: Any) -> int:
+    try:
+        return int(round(cents_to_mad(int(getattr(order, "total_cents", 0) or 0))))
+    except Exception:
+        return 0
 
 
 def _can_open(order: Any) -> bool:
     value = getattr(order, "can_open", None)
     if value is None:
-        value = getattr(order, "canOpen", True)
-    return bool(value)
+        value = getattr(order, "canOpen", None)
+    return bool(value) if value is not None else False
+
+
+def _qr_payload(order: Any, fallback: str) -> str:
+    ticket = str(getattr(order, "meta_livraison_ticket_url", "") or "").strip()
+    tracking = tracking_of(order)
+    return ticket or tracking or fallback
 
 
 def _qr_image(payload: str) -> ImageReader:
-    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=1)
-    qr.add_data(payload)
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=0)
+    qr.add_data(payload or " ")
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
     buf = BytesIO()
@@ -291,157 +332,300 @@ def _qr_image(payload: str) -> ImageReader:
     return ImageReader(buf)
 
 
-def _draw_page(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) -> None:
-    _ensure_fonts()
-    w, h = PAGE
-    m = 3.2 * mm
-    tracking = tracking_of(order)
-    hub = destination_hub(order, tarifs)
-    code = parcel_code(str(getattr(order, "id", "") or "ORDER"))
-    today = datetime.now(TZ).strftime("%d/%m/%Y")
-    notes = str(getattr(order, "courier_notes", "") or "").strip() or "—"
-    open_label = "مسموح بالفتح" if _can_open(order) else "ممنوع فتح الطلبية"
-
-    # Header
-    logo_s = 11 * mm
-    c.setFillColorRGB(0, 0, 0)
-    c.rect(m, h - m - logo_s, logo_s, logo_s, fill=1, stroke=0)
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawCentredString(m + logo_s / 2, h - m - logo_s / 2 - 4, "M")
-    c.setFillColorRGB(0, 0, 0)
-    brand_x = m + logo_s + 2.2 * mm
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(brand_x, h - m - 4.2 * mm, "META")
-    c.setFont("Helvetica-Bold", 7.2)
-    c.drawString(brand_x, h - m - 7.6 * mm, "LIVRAISON")
-    _draw_text(c, TAGLINE, brand_x, h - m - 11.2 * mm, 6.2, bold=True)
-
-    c.setFont("Helvetica", 5.6)
-    c.drawString(m, h - m - 16.4 * mm, "Expediteur :")
-    c.setFont("Helvetica-Bold", 7)
-    c.drawString(m + 22 * mm, h - m - 16.4 * mm, f"{SENDER_NAME} ({SENDER_CODE})")
-    c.setFont("Helvetica", 6.2)
-    c.drawString(m, h - m - 20.2 * mm, f"Phone : {SENDER_PHONE}")
-
-    right = w - m
-    c.setFont("Helvetica", 5.6)
-    c.drawRightString(right, h - m - 4.4 * mm, "Depart :")
-    c.setFont("Helvetica-Bold", 8)
-    c.drawRightString(right, h - m - 8.6 * mm, f"HUB {DEPART_HUB}")
-    c.setFont("Helvetica", 6.4)
-    c.drawRightString(right, h - m - 12.6 * mm, today)
-
-    # Destination banner
-    banner_y = h - 36.5 * mm
-    banner_h = 12.5 * mm
-    c.setFillColorRGB(0, 0, 0)
-    c.rect(m, banner_y, w - 2 * m, banner_h, fill=1, stroke=0)
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawCentredString(w / 2, banner_y + 3.8 * mm, f"HUB {hub}")
-    c.setFillColorRGB(0, 0, 0)
-
-    # Body grid
-    body_top = banner_y - 2.2 * mm
-    body_h = 62 * mm
-    left_w = 58 * mm
-    gap = 1.6 * mm
-    right_w = w - 2 * m - left_w - gap
-    left_x = m
-    right_x = m + left_w + gap
-    body_y = body_top - body_h
-    c.setLineWidth(0.7)
-    c.rect(left_x, body_y, left_w, body_h, fill=0, stroke=1)
-    c.rect(right_x, body_y, right_w, body_h, fill=0, stroke=1)
-
-    fields = [
-        ("Destinataire", str(getattr(order, "full_name", "") or "—"), 2),
-        ("Telephone", _phone(order), 1),
-        ("Ville", _ville(order), 1),
-        ("Adresse", _address(order), 3),
-        ("Commentaire", notes, 2),
-        ("Marchendise", _goods(order), 2),
-    ]
-    cursor = body_top - 4.2 * mm
-    label_x = left_x + 1.8 * mm
-    value_w = left_w - 3.6 * mm
-    for label, value, max_lines in fields:
-        c.setFillColorRGB(0.25, 0.25, 0.25)
-        c.setFont("Helvetica", 5.2)
-        c.drawString(label_x, cursor, f"{label} :")
-        cursor -= 3.4 * mm
-        c.setFillColorRGB(0, 0, 0)
-        font = _font_for(value, True)
-        lines = _wrap(value, font, 7.2, value_w, max_lines)
-        for line in lines:
-            _draw_text(c, line, label_x, cursor, 7.2, bold=True)
-            cursor -= 3.7 * mm
-        cursor -= 1.1 * mm
-
-    qr_size = 28 * mm
-    qr_x = right_x + (right_w - qr_size) / 2
-    qr_y = body_top - qr_size - 4 * mm
-    if tracking:
-        c.drawImage(_qr_image(tracking), qr_x, qr_y, qr_size, qr_size, preserveAspectRatio=True, mask="auto")
-    c.setFont("Helvetica", 5)
-    c.drawCentredString(right_x + right_w / 2, qr_y - 3.2 * mm, tracking or "")
-    c.setFont("Helvetica-Bold", 12)
-    amount = _cod(order)
-    c.drawCentredString(right_x + right_w / 2, body_y + 8.5 * mm, amount)
-    c.setFont("Helvetica", 5.4)
-    c.drawCentredString(right_x + right_w / 2, body_y + 4.4 * mm, "CRBT / COD")
-
-    # COLIS NORMAL
-    colis_h = 7.4 * mm
-    colis_y = body_y - 2 * mm - colis_h
-    c.setFillColorRGB(0, 0, 0)
-    c.rect(m, colis_y, w - 2 * m, colis_h, fill=1, stroke=0)
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawCentredString(w / 2, colis_y + 2.1 * mm, "COLIS NORMAL")
-    c.setFillColorRGB(0, 0, 0)
-
-    # Footer barcode + badge + disclaimer
-    strip_h = 7 * mm
-    badge_w = 9.5 * mm
-    bar_x = m
-    bar_w = w - 2 * m - badge_w - 1.4 * mm
-    bar_y = strip_h + 3.4 * mm
-    bar_h = colis_y - bar_y - 2.4 * mm
-    c.setLineWidth(0.6)
-    c.rect(bar_x, bar_y, bar_w, max(bar_h, 18 * mm), fill=0, stroke=1)
+def _barcode(c: canvas.Canvas, value: str, x: float, y: float, width: float, height: float) -> None:
     try:
-        available = bar_w - 4 * mm
         bar_width = 0.95
-        barcode = code128.Code128(code, barHeight=min(16 * mm, bar_h - 8 * mm), barWidth=bar_width, humanReadable=0)
-        while barcode.width > available and bar_width > 0.38:
-            bar_width -= 0.05
-            barcode = code128.Code128(code, barHeight=min(16 * mm, bar_h - 8 * mm), barWidth=bar_width, humanReadable=0)
-        barcode.drawOn(c, bar_x + (bar_w - barcode.width) / 2, bar_y + 7.2 * mm)
+        barcode = code128.Code128(value, barHeight=height, barWidth=bar_width, humanReadable=0)
+        while barcode.width > width and bar_width > 0.32:
+            bar_width -= 0.04
+            barcode = code128.Code128(value, barHeight=height, barWidth=bar_width, humanReadable=0)
+        barcode.drawOn(c, x + max(0, (width - barcode.width) / 2), y)
     except Exception:
         c.setFont("Helvetica-Bold", 8)
-        c.drawCentredString(bar_x + bar_w / 2, bar_y + 10 * mm, code)
-    c.setFont("Helvetica-Bold", 7)
-    c.drawCentredString(bar_x + bar_w / 2, bar_y + 2.4 * mm, code)
+        c.drawCentredString(x + width / 2, y + height / 2, value)
 
-    badge_x = w - m - badge_w
-    badge_y = bar_y
-    badge_h = max(bar_h, 18 * mm)
-    c.setFillColorRGB(0, 0, 0)
-    c.rect(badge_x, badge_y, badge_w, badge_h, fill=1, stroke=0)
+
+def _spaced(code: str) -> str:
+    return " ".join(list((code or "").strip()))
+
+
+def _fill_black(c: canvas.Canvas, x: float, y: float, w: float, h: float) -> None:
+    c.setFillColor(black)
+    c.rect(x, y, w, h, stroke=0, fill=1)
+    c.setFillColor(white)
+
+
+def _draw_meta_logo(c: canvas.Canvas, cx: float, cy: float) -> None:
+    c.setStrokeColor(black)
+    c.setFillColor(black)
+    c.setLineWidth(2.2)
+    c.setLineCap(1)
+    c.setLineJoin(1)
+    path = c.beginPath()
+    path.moveTo(cx - 9 * mm, cy - 2.4 * mm)
+    path.curveTo(cx - 7 * mm, cy + 5.2 * mm, cx - 1.6 * mm, cy + 5.6 * mm, cx, cy + 0.6 * mm)
+    path.curveTo(cx + 1.6 * mm, cy + 5.6 * mm, cx + 7 * mm, cy + 5.2 * mm, cx + 9 * mm, cy - 2.4 * mm)
+    c.drawPath(path, stroke=1, fill=0)
     c.saveState()
-    c.setFillColorRGB(1, 1, 1)
-    c.translate(badge_x + badge_w / 2, badge_y + badge_h / 2)
-    c.rotate(90)
-    _draw_text(c, open_label, 0, -2.2, 6.4, bold=True, align="center")
+    c.translate(cx + 7.2 * mm, cy - 0.2 * mm)
+    c.rotate(-20)
+    c.rect(0, -0.7 * mm, 3.6 * mm, 1.4 * mm, stroke=0, fill=1)
     c.restoreState()
 
-    c.setFillColorRGB(0, 0, 0)
-    c.rect(0, 0, w, strip_h, fill=1, stroke=0)
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 4.6)
-    c.drawCentredString(w / 2, 2.2 * mm, DISCLAIMER)
+
+def _draw_quick_mark(c: canvas.Canvas, x: float, y: float) -> None:
+    size = 8.2 * mm
+    top = [(x + size / 2, y + size), (x + size, y + size * 0.62), (x + size / 2, y + size * 0.28), (x, y + size * 0.62)]
+    left = [(x, y + size * 0.62), (x + size / 2, y + size * 0.28), (x + size / 2, y), (x, y + size * 0.34)]
+    right = [(x + size / 2, y + size * 0.28), (x + size, y + size * 0.62), (x + size, y + size * 0.34), (x + size / 2, y)]
+    for color, pts in ((BLUE, top), (NAVY, left), (GREEN, right)):
+        c.setFillColor(color)
+        path = c.beginPath()
+        path.moveTo(*pts[0])
+        for pt in pts[1:]:
+            path.lineTo(*pt)
+        path.close()
+        c.drawPath(path, fill=1, stroke=0)
+    c.setFillColor(black)
+
+
+def _draw_meta(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) -> None:
+    _ensure_fonts()
+    w, h = PAGE
+    tracking = tracking_of(order)
+    code = parcel_code(str(getattr(order, "id", "") or "ORDER"))
+    hub = destination_hub(order, tarifs)
+    today = datetime.now(TZ).strftime("%d/%m/%Y")
+    notes = str(getattr(order, "courier_notes", "") or "").strip()
+    open_label = "مسموح فتح الطلبية" if _can_open(order) else "ممنوع فتح الطلبية"
+    qr_value = _qr_payload(order, code)
+
+    inset = 0.7 * mm
+    c.setStrokeColor(black)
+    c.setLineWidth(1.6)
+    c.rect(inset, inset, w - 2 * inset, h - 2 * inset, stroke=1, fill=0)
+    left = inset
+    right = w - inset
+    top = h - inset
+
+    header_h = 10.6 * mm
+    header_y = top - header_h
+    c.setLineWidth(1.2)
+    c.line(left, header_y, right, header_y)
+    _draw_meta_logo(c, w / 2 - 18 * mm, header_y + 5.2 * mm)
+    c.setFillColor(black)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(w / 2 - 6 * mm, header_y + 5.6 * mm, "metalivraison")
+    _draw_text(c, TAGLINE, w / 2 - 6 * mm, header_y + 2.2 * mm, 5.4, bold=True)
+
+    sender_h = 9.6 * mm
+    sender_y = header_y - sender_h
+    split_x = left + 58 * mm
+    c.line(left, sender_y, right, sender_y)
+    c.line(split_x, sender_y, split_x, header_y)
+    _draw_text(c, f"Expediteur : {META_SENDER_NAME} ({META_SENDER_CODE})", left + 1.6 * mm, header_y - 4 * mm, 6.2, bold=True)
+    _draw_text(c, f"Telephone : {META_SENDER_PHONE}", left + 1.6 * mm, header_y - 7.6 * mm, 6.1, bold=True)
+    c.setFont("Helvetica-Bold", 9.5)
+    c.drawString(split_x + 1.6 * mm, header_y - 4.4 * mm, "Départ :")
+    c.setFont("Helvetica-Bold", 8)
+    c.drawRightString(right - 1.6 * mm, header_y - 4.2 * mm, f"HUB {META_DEPART_HUB}")
+    c.setFont("Helvetica-Bold", 6.6)
+    c.drawRightString(right - 1.6 * mm, header_y - 7.6 * mm, today)
+
+    banner_h = 6.8 * mm
+    banner_y = sender_y - banner_h
+    _fill_black(c, left, banner_y, right - left, banner_h)
+    c.setFont("Helvetica-Bold", 13)
+    c.drawCentredString(w / 2, banner_y + 2.1 * mm, f"HUB {hub}")
+    c.setFillColor(black)
+
+    footer_h = 4.8 * mm
+    footer_y = inset
+    barcode_h = 16.2 * mm
+    barcode_y = footer_y + footer_h
+    colis_h = 5 * mm
+    colis_y = barcode_y + barcode_h
+    body_top = banner_y
+    body_bot = colis_y + colis_h
+    c.setStrokeColor(black)
+    c.setLineWidth(1.2)
+    c.line(left, body_bot, right, body_bot)
+
+    qr_col_w = 32 * mm
+    qr_x = right - qr_col_w
+    c.line(qr_x, body_bot, qr_x, body_top)
+
+    fields = [
+        ("Destinataire", str(getattr(order, "full_name", "") or "—")),
+        ("Telephone", _phone(order, "meta")),
+        ("Ville", _ville(order)),
+        ("Adresse :", _address(order)),
+        ("Commentaire:", notes),
+        ("Marchendise", _meta_goods(order)),
+    ]
+    row_h = (body_top - body_bot) / len(fields)
+    for i, (label, value) in enumerate(fields):
+        y = body_top - (i + 1) * row_h
+        if i:
+            c.setLineWidth(0.7)
+            c.line(left, y + row_h, qr_x, y + row_h)
+        _draw_text(c, label, left + 1.5 * mm, y + row_h - 3.3 * mm, 5.4, bold=True)
+        value_x = left + 22 * mm
+        font = _font_for(value, True)
+        lines = _wrap(value, font, 6.4, qr_x - value_x - 1.6 * mm, 2 if label.startswith("Adresse") else 1)
+        cursor = y + row_h - 3.3 * mm
+        for line in lines:
+            _draw_text(c, line, value_x, cursor, 6.4, bold=True)
+            cursor -= 2.8 * mm
+
+    montant_h = 11 * mm
+    qr_box_h = body_top - body_bot - montant_h
+    qr_size = min(24 * mm, qr_box_h - 2.4 * mm)
+    qr_img_x = qr_x + (qr_col_w - qr_size) / 2
+    qr_img_y = body_bot + montant_h + (qr_box_h - qr_size) / 2
+    c.drawImage(_qr_image(qr_value), qr_img_x, qr_img_y, qr_size, qr_size, preserveAspectRatio=True, mask="auto")
+    c.setLineWidth(1.1)
+    c.line(qr_x, body_bot + montant_h, right, body_bot + montant_h)
+    c.setFillColor(black)
+    c.setFont("Helvetica-Bold", 6)
+    c.drawCentredString(qr_x + qr_col_w / 2, body_bot + montant_h - 3 * mm, "MONTANT")
+    c.setFont("Helvetica-Bold", 13)
+    c.drawCentredString(qr_x + qr_col_w / 2, body_bot + 2.4 * mm, f"{_cod_number(order)} MAD")
+
+    c.setLineWidth(1.2)
+    c.line(left, colis_y, right, colis_y)
+    c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(w / 2, colis_y + 1.5 * mm, "COLIS NORMAL")
+
+    open_w = 9.2 * mm
+    c.line(right - open_w, barcode_y, right - open_w, colis_y)
+    _barcode(c, code, left + 1.4 * mm, barcode_y + 5.4 * mm, right - open_w - left - 2.8 * mm, 8.8 * mm)
+    c.setFont("Helvetica-Bold", 5.6)
+    c.drawCentredString((left + right - open_w) / 2, barcode_y + 1.6 * mm, code)
+    c.saveState()
+    c.translate(right - open_w / 2, (barcode_y + colis_y) / 2)
+    c.rotate(90)
+    _draw_text(c, open_label, 0, -1.6, 5.6, bold=True, align="center")
+    c.restoreState()
+
+    _fill_black(c, left, footer_y, right - left, footer_h)
+    c.setFont("Helvetica-Bold", 4.4)
+    c.drawCentredString(w / 2, footer_y + 1.6 * mm, DISCLAIMER)
+    c.setFillColor(black)
+    _ = tracking
+
+
+def _draw_quick(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) -> None:
+    _ = tarifs
+    _ensure_fonts()
+    w, h = PAGE
+    tracking = tracking_of(order) or parcel_code(str(getattr(order, "id", "") or "ORDER"))
+    qr_value = _qr_payload(order, tracking)
+
+    inset = 0.7 * mm
+    c.setStrokeColor(black)
+    c.setLineWidth(1.4)
+    c.rect(inset, inset, w - 2 * inset, h - 2 * inset, stroke=1, fill=0)
+    left = inset
+    right = w - inset
+    top = h - inset
+
+    header_h = 12 * mm
+    header_y = top - header_h
+    split = left + 62 * mm
+    c.setLineWidth(1.1)
+    c.line(left, header_y, right, header_y)
+    c.line(split, header_y, split, top)
+    _draw_quick_mark(c, left + 1.6 * mm, header_y + 1.8 * mm)
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(left + 12 * mm, header_y + 6.8 * mm, "Quick Livraison")
+    c.setFillColor(GREEN)
+    c.setFont("Helvetica-Bold", 6)
+    c.drawString(left + 12 * mm, header_y + 3.4 * mm, "We Are Every Where")
+    c.setFillColor(black)
+    c.setFont("Helvetica-Bold", 6.2)
+    c.drawString(split + 1.5 * mm, top - 3.2 * mm, "Zone Expedition:")
+    box_y = header_y + 1.4 * mm
+    _fill_black(c, split + 1.5 * mm, box_y, right - split - 3 * mm, 6.4 * mm)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawCentredString((split + right) / 2, box_y + 1.8 * mm, QUICK_EXPEDITION)
+    c.setFillColor(black)
+
+    grid_h = 29 * mm
+    grid_y = header_y - grid_h
+    col1 = left + 31 * mm
+    col2 = left + 62 * mm
+    c.line(left, grid_y, right, grid_y)
+    c.line(col1, grid_y, col1, header_y)
+    c.line(col2, grid_y, col2, header_y)
+    c.setFont("Helvetica-Bold", 6.2)
+    c.drawString(left + 1.4 * mm, header_y - 3.4 * mm, "Zone Reception:")
+    qr_size = 21 * mm
+    c.drawImage(
+        _qr_image(qr_value),
+        left + (col1 - left - qr_size) / 2,
+        grid_y + 1.6 * mm,
+        qr_size,
+        qr_size,
+        preserveAspectRatio=True,
+        mask="auto",
+    )
+    c.setFont("Helvetica-Bold", 6.2)
+    c.drawString(col1 + 1.4 * mm, header_y - 3.4 * mm, "Expediteur:")
+    c.setFont("Helvetica-Bold", 7.2)
+    c.drawCentredString((col1 + col2) / 2, header_y - 10 * mm, f"{QUICK_SENDER_NAME} - ({QUICK_SENDER_CODE})")
+    c.setFont("Helvetica-Bold", 7)
+    c.drawCentredString((col1 + col2) / 2, header_y - 15 * mm, QUICK_SENDER_PHONE)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawCentredString((col1 + col2) / 2, header_y - 21.5 * mm, "STOCK")
+    c.setFont("Helvetica-Bold", 6.2)
+    c.drawString(col2 + 1.4 * mm, header_y - 3.4 * mm, "Destinataire:")
+    dest_x = col2 + 1.6 * mm
+    dest_w = right - dest_x - 1.4 * mm
+    _draw_text(c, str(getattr(order, "full_name", "") or "—"), dest_x, header_y - 8.2 * mm, 7.4, bold=True)
+    _draw_text(c, _phone(order, "quick"), dest_x, header_y - 12.4 * mm, 7, bold=True)
+    _draw_text(c, _ville(order), dest_x, header_y - 16.6 * mm, 7.2, bold=True)
+    addr_font = _font_for(_address(order), True)
+    for i, line in enumerate(_wrap(_address(order), addr_font, 6.4, dest_w, 3)):
+        _draw_text(c, line, dest_x, header_y - 21 * mm - i * 3.2 * mm, 6.4, bold=True)
+
+    flags_h = 7.2 * mm
+    flags_y = grid_y - flags_h
+    mid = (left + right) / 2
+    c.line(left, flags_y, right, flags_y)
+    c.line(mid, flags_y, mid, grid_y)
+    c.setFont("Helvetica-Bold", 8)
+    open_text = "Autorisé à ouvrir" if _can_open(order) else "Interdit d'ouvrir"
+    c.drawCentredString((left + mid) / 2, flags_y + 2.4 * mm, open_text)
+    c.drawCentredString((mid + right) / 2, flags_y + 2.4 * mm, "Interdit d'essayer")
+
+    goods_h = 16.5 * mm
+    goods_y = flags_y - goods_h
+    crbt_x = left + (right - left) * 0.75
+    c.line(left, goods_y, right, goods_y)
+    c.line(crbt_x, goods_y, crbt_x, flags_y)
+    c.setFont("Helvetica-Bold", 6.2)
+    c.drawString(left + 1.5 * mm, flags_y - 3.2 * mm, "Marchandise:")
+    goods = _quick_goods(order)
+    goods_font = _font_for(goods, True)
+    for i, line in enumerate(_wrap(goods, goods_font, 6.2, crbt_x - left - 3.2 * mm, 4)):
+        _draw_text(c, line, left + 1.5 * mm, flags_y - 7 * mm - i * 3 * mm, 6.2, bold=True)
+    c.setFont("Helvetica-Bold", 6.4)
+    c.drawCentredString((crbt_x + right) / 2, flags_y - 3.4 * mm, "Crbt:")
+    c.setFont("Helvetica-Bold", 12)
+    c.drawCentredString((crbt_x + right) / 2, goods_y + 4.8 * mm, f"{_cod_number(order)} DH")
+
+    _barcode(c, tracking, left + 2 * mm, goods_y - 14.2 * mm, right - left - 4 * mm, 10.5 * mm)
+    c.setFont("Courier-Bold", 7.2)
+    c.drawCentredString(w / 2, inset + 2.2 * mm, _spaced(tracking))
+
+
+def _draw_page(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) -> None:
+    if normalize_carrier(getattr(order, "carrier", None)) == CARRIER_QUICK:
+        _draw_quick(c, order, tarifs)
+    else:
+        _draw_meta(c, order, tarifs)
 
 
 def render_label_pdf(orders: list[Any], tarifs: TarifIndex | None = None) -> bytes:
@@ -449,7 +633,7 @@ def render_label_pdf(orders: list[Any], tarifs: TarifIndex | None = None) -> byt
         raise ValueError("no_labels")
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=PAGE)
-    c.setTitle("Chifa Glow — Meta Livraison A6")
+    c.setTitle("Chifaglow — Shipping Labels 100x100")
     for index, order in enumerate(orders):
         if index:
             c.showPage()
