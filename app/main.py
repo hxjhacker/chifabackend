@@ -8,7 +8,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlmodel import SQLModel, Session
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.cities import router as cities_router
 from app.api.health import router as health_router
@@ -101,7 +100,6 @@ async def all_exception_handler(request: Request, exc: Exception):
 
 
 app.add_middleware(RequestLogMiddleware)
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list or ["*"],
