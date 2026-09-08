@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
+import json
+import logging
 import threading
 import traceback
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlmodel import SQLModel, Session
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.cities import router as cities_router
 from app.api.health import router as health_router
@@ -20,6 +21,9 @@ from app.config import settings
 from app.db import engine, ensure_order_columns
 from app.models import CityTarif, Order, OrderItem, Product, TrackingEvent, PageView, PushSubscription  # noqa: F401
 from app.seed import seed_products
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("chifaglow")
 
 
 @asynccontextmanager
@@ -64,22 +68,78 @@ async def lifespan(_: FastAPI):
         pass
 
 
-class Json500Middleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+def _error_payload(exc: BaseException, path: str | None = None) -> dict:
+    return {
+        "error": str(exc),
+        "type": type(exc).__name__,
+        "path": path,
+        "trace": traceback.format_exc().splitlines()[-8:],
+    }
+
+
+class TraceASGIMiddleware:
+    """Raw ASGI catch-all. BaseHTTPMiddleware breaks /docs streaming and can 500 every route."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        started = False
+
+        async def send_wrapper(message):
+            nonlocal started
+            if message.get("type") == "http.response.start":
+                started = True
+            await send(message)
+
         try:
-            return await call_next(request)
+            await self.app(scope, receive, send_wrapper)
         except Exception as exc:
             traceback.print_exc()
-            print("MIDDLEWARE EXCEPTION:", type(exc).__name__, repr(exc), "path=", request.url.path)
-            return JSONResponse(
-                status_code=500,
-                content={"error": str(exc), "traceback": traceback.format_exc()},
+            path = scope.get("path")
+            log.exception("UNHANDLED %s %s: %r", scope.get("method"), path, exc)
+            print("ASGI EXCEPTION:", type(exc).__name__, repr(exc), "path=", path, flush=True)
+            if started:
+                return
+            body = json.dumps(_error_payload(exc, path), ensure_ascii=False).encode("utf-8", "replace")
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 500,
+                    "headers": [
+                        (b"content-type", b"application/json; charset=utf-8"),
+                        (b"content-length", str(len(body)).encode()),
+                    ],
+                }
             )
+            await send({"type": "http.response.body", "body": body})
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+print("[BOOT] exception logging enabled", flush=True)
 
-app.add_middleware(Json500Middleware)
+
+@app.exception_handler(Exception)
+async def all_exception_handler(request: Request, exc: Exception):
+    traceback.print_exc()
+    log.exception("UNHANDLED %s %s: %r", request.method, request.url.path, exc)
+    try:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(exc),
+                "trace": traceback.format_exc().splitlines()[-3:],
+            },
+        )
+    except Exception:
+        traceback.print_exc()
+        return PlainTextResponse(f"Internal Server Error: {type(exc).__name__}: {exc}", status_code=500)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list or ["*"],
@@ -88,6 +148,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(TraceASGIMiddleware)
+
+@app.get("/")
+def root():
+    return {"ok": True, "service": settings.app_name}
+
 
 app.include_router(health_router)
 app.include_router(products_router)
@@ -96,12 +162,3 @@ app.include_router(orders_router)
 app.include_router(tracking_router)
 app.include_router(admin_router)
 app.include_router(admin_products_router)
-
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    traceback.print_exc()
-    return JSONResponse(
-        status_code=500,
-        content={"error": str(exc), "traceback": traceback.format_exc()},
-    )
