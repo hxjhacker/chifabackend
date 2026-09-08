@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-import json
 import logging
 import threading
 import traceback
@@ -9,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlmodel import SQLModel, Session
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.cities import router as cities_router
 from app.api.health import router as health_router
@@ -68,55 +68,14 @@ async def lifespan(_: FastAPI):
         pass
 
 
-def _error_payload(exc: BaseException, path: str | None = None) -> dict:
-    return {
-        "error": str(exc),
-        "type": type(exc).__name__,
-        "path": path,
-        "trace": traceback.format_exc().splitlines()[-8:],
-    }
-
-
-class TraceASGIMiddleware:
-    """Raw ASGI catch-all. BaseHTTPMiddleware breaks /docs streaming and can 500 every route."""
-
+class RequestLogMiddleware:
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        started = False
-
-        async def send_wrapper(message):
-            nonlocal started
-            if message.get("type") == "http.response.start":
-                started = True
-            await send(message)
-
-        try:
-            await self.app(scope, receive, send_wrapper)
-        except Exception as exc:
-            traceback.print_exc()
-            path = scope.get("path")
-            log.exception("UNHANDLED %s %s: %r", scope.get("method"), path, exc)
-            print("ASGI EXCEPTION:", type(exc).__name__, repr(exc), "path=", path, flush=True)
-            if started:
-                return
-            body = json.dumps(_error_payload(exc, path), ensure_ascii=False).encode("utf-8", "replace")
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 500,
-                    "headers": [
-                        (b"content-type", b"application/json; charset=utf-8"),
-                        (b"content-length", str(len(body)).encode()),
-                    ],
-                }
-            )
-            await send({"type": "http.response.body", "body": body})
+        if scope.get("type") == "http":
+            print(f"REQ {scope.get('method')} {scope.get('path')}", flush=True)
+        await self.app(scope, receive, send)
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -126,7 +85,8 @@ print("[BOOT] exception logging enabled", flush=True)
 @app.exception_handler(Exception)
 async def all_exception_handler(request: Request, exc: Exception):
     traceback.print_exc()
-    log.exception("UNHANDLED %s %s: %r", request.method, request.url.path, exc)
+    path = request.scope.get("path")
+    log.exception("UNHANDLED %s: %r", path, exc)
     try:
         return JSONResponse(
             status_code=500,
@@ -140,6 +100,8 @@ async def all_exception_handler(request: Request, exc: Exception):
         return PlainTextResponse(f"Internal Server Error: {type(exc).__name__}: {exc}", status_code=500)
 
 
+app.add_middleware(RequestLogMiddleware)
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list or ["*"],
@@ -148,7 +110,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(TraceASGIMiddleware)
+
 
 @app.get("/")
 def root():
