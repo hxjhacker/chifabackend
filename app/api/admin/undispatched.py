@@ -1,3 +1,3 @@
-from app.services.undispatched import undispatched_summary
+"""Kept for import compatibility. Summary lives in app.routers.admin."""
 
-__all__ = ["undispatched_summary"]
+__all__: list[str] = []

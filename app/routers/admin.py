@@ -3,7 +3,7 @@
 import json
 import os
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -12,8 +12,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import inspect, or_, text
-from sqlmodel import Session, select
+from sqlalchemy import and_, func, inspect, or_, text
+from sqlmodel import Session, col, select
 
 from app.db import engine, get_session
 from app.dependencies import client_ip, get_current_admin
@@ -40,7 +40,6 @@ from app.services.carriers import (
 )
 from app.services.carriers.quick import sync_quick_districts
 from app.services.meta_livraison_cities import is_official_meta_city, resolve_meta_city
-from app.services.undispatched import undispatched_summary
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -741,13 +740,123 @@ def admin_orders(
     }
 
 
+def _undispatched_empty(error: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "new_orders_count": 0,
+        "overdue_orders_count": 0,
+        "total_count": 0,
+        "new_items": [],
+        "overdue_items": [],
+        "items": [],
+    }
+    if error:
+        payload["error"] = error
+    return payload
+
+
+def _undispatched_no_tracking():
+    return or_(
+        col(Order.meta_livraison_code).is_(None),
+        Order.meta_livraison_code == "",
+    )
+
+
+def _undispatched_hours(value: datetime | None, now: datetime) -> int:
+    if value is None:
+        return 0
+    stamp = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return max(0, int((now - stamp).total_seconds() // 3600))
+
+
+def _undispatched_item(order: Order, now: datetime, delayed_from: datetime | None) -> dict[str, Any]:
+    compact = str(order.id).replace("-", "")[:6].upper()
+    return {
+        "id": str(order.id),
+        "order_id": str(order.id),
+        "code": f"#CFG-{compact}",
+        "full_name": order.full_name,
+        "client_name": order.full_name,
+        "customer_name": order.full_name,
+        "phone": order.phone_national or order.phone,
+        "phone_national": order.phone_national,
+        "city": order.city,
+        "address": getattr(order, "address", None),
+        "status": _display_status(order.status),
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "confirmed_at": order.confirmed_at.isoformat() if order.confirmed_at else None,
+        "hours_delayed": _undispatched_hours(delayed_from or order.confirmed_at or order.created_at, now),
+        "hours_ago": _undispatched_hours(order.created_at, now),
+        "meta_livraison_code": getattr(order, "meta_livraison_code", None),
+    }
+
+
 @router.get("/orders/undispatched-summary")
 def admin_undispatched_summary(
     admin: dict = Depends(get_current_admin),
     session: Session = Depends(get_session),
 ):
     _ = admin
-    return undispatched_summary(session)
+    try:
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=24)
+        no_tracking = _undispatched_no_tracking()
+        new_statuses = ("pending", "new", "upsell_accepted", "confirmed")
+        overdue_where = and_(
+            no_tracking,
+            Order.status == "confirmed",
+            or_(
+                Order.confirmed_at <= cutoff,
+                and_(col(Order.confirmed_at).is_(None), Order.created_at <= cutoff),
+            ),
+        )
+        new_where = and_(
+            no_tracking,
+            Order.status.in_(new_statuses),
+            Order.created_at >= cutoff,
+            or_(
+                Order.status != "confirmed",
+                and_(
+                    Order.status == "confirmed",
+                    or_(
+                        Order.confirmed_at > cutoff,
+                        and_(col(Order.confirmed_at).is_(None), Order.created_at > cutoff),
+                    ),
+                ),
+            ),
+        )
+
+        def _count(clause) -> int:
+            raw = session.exec(select(func.count(Order.id)).where(clause)).one()
+            if isinstance(raw, (tuple, list)):
+                return int(raw[0] or 0)
+            return int(raw or 0)
+
+        new_count = _count(new_where)
+        overdue_count = _count(overdue_where)
+        new_rows = session.exec(
+            select(Order).where(new_where).order_by(col(Order.created_at).desc()).limit(50)
+        ).all()
+        overdue_rows = session.exec(
+            select(Order)
+            .where(overdue_where)
+            .order_by(col(Order.confirmed_at).asc(), col(Order.created_at).asc())
+            .limit(50)
+        ).all()
+        overdue_items = [
+            _undispatched_item(row, now, row.confirmed_at or row.created_at) for row in overdue_rows
+        ]
+        new_items = [_undispatched_item(row, now, row.created_at) for row in new_rows]
+        return {
+            "new_orders_count": new_count,
+            "overdue_orders_count": overdue_count,
+            "total_count": new_count + overdue_count,
+            "new_items": new_items,
+            "overdue_items": overdue_items,
+            "items": overdue_items,
+        }
+    except Exception as exc:
+        traceback.print_exc()
+        return _undispatched_empty(str(exc))
 
 
 @router.post("/orders", status_code=201)

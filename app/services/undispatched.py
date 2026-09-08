@@ -106,6 +106,9 @@ def _count(session: Session, clause) -> int:
     if isinstance(raw, (tuple, list)):
         return int(raw[0] or 0)
     return int(raw or 0)
+
+
+def undispatched_summary(session: Session) -> dict:
     now = _now()
     cutoff = now - timedelta(hours=24)
     overdue_where = _overdue_clause(cutoff)
