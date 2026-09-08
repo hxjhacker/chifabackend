@@ -88,6 +88,17 @@ CITY_TARIFS_SQL = (
     "CREATE INDEX IF NOT EXISTS ix_city_tarifs_quick_district_id ON city_tarifs (quick_district_id)",
 )
 
+PRODUCTS_SQL = (
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS code varchar(64)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS default_price_cents integer DEFAULT 0 NOT NULL",
+    "UPDATE products SET code = UPPER(slug) WHERE code IS NULL OR BTRIM(code) = ''",
+    "UPDATE products SET default_price_cents = 19900 WHERE slug = 'quran' AND (default_price_cents IS NULL OR default_price_cents = 0)",
+    "UPDATE products SET default_price_cents = 14900 WHERE slug = 'kids' AND (default_price_cents IS NULL OR default_price_cents = 0)",
+    "UPDATE products SET default_price_cents = 19900 WHERE slug IN ('music', 'educative') AND (default_price_cents IS NULL OR default_price_cents = 0)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_products_code ON products (code)",
+    "ALTER TABLE products ALTER COLUMN code SET NOT NULL",
+)
+
 
 def _exec_isolated(conn, sql: str) -> None:
     """Run one statement in a savepoint so a failure cannot abort the batch."""
@@ -111,6 +122,8 @@ def ensure_order_columns() -> None:
         for sql in PUSH_SUBSCRIPTIONS_SQL:
             _exec_isolated(conn, sql)
         for sql in CITY_TARIFS_SQL:
+            _exec_isolated(conn, sql)
+        for sql in PRODUCTS_SQL:
             _exec_isolated(conn, sql)
 
 

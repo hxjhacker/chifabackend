@@ -17,7 +17,8 @@ from sqlmodel import Session, select
 
 from app.db import engine, get_session
 from app.dependencies import client_ip, get_current_admin
-from app.models import Order
+from app.models import Order, Product
+from app.services.catalog import resolve_order_slug
 from app.rate_limit import login_limiter
 from app.security import (
     admin_configured,
@@ -122,12 +123,38 @@ def _has_complete_confirm_details(order: Order) -> bool:
     return len(rest) >= 5
 
 
-def _pack_label(order: Order) -> str:
-    parts = [f"{PACK_NAMES.get(order.product_slug, order.product_slug)} Ã— {order.tier_qty}"]
+def _product_labels(session: Session | None) -> dict[str, str]:
+    labels = dict(PACK_NAMES)
+    if session is None:
+        return labels
+    cached = getattr(session, "_product_labels_cache", None)
+    if isinstance(cached, dict):
+        return cached
+    try:
+        for product in session.exec(select(Product)).all():
+            labels[product.slug] = product.name_ar
+            code = getattr(product, "code", None)
+            if code:
+                labels[str(code)] = product.name_ar
+        setattr(session, "_product_labels_cache", labels)
+    except Exception:
+        pass
+    return labels
+
+
+def _pack_name(slug: str | None, session: Session | None = None) -> str:
+    token = str(slug or "").strip()
+    if not token:
+        return ""
+    return _product_labels(session).get(token, token)
+
+
+def _pack_label(order: Order, session: Session | None = None) -> str:
+    parts = [f"{_pack_name(order.product_slug, session)} × {order.tier_qty}"]
     if order.cross_sell_slug:
-        parts.append(PACK_NAMES.get(order.cross_sell_slug, order.cross_sell_slug))
+        parts.append(_pack_name(order.cross_sell_slug, session))
     if order.upsell_slug:
-        parts.append(f"{PACK_NAMES.get(order.upsell_slug, order.upsell_slug)} (Ø¹Ø±Ø¶)")
+        parts.append(f"{_pack_name(order.upsell_slug, session)} (عرض)")
     return " + ".join(parts)
 
 
@@ -147,7 +174,7 @@ def _iso(value: object) -> str | None:
     return str(value)
 
 
-def _serialize_order(order: Order) -> dict:
+def _serialize_order(order: Order, session: Session | None = None) -> dict:
     return {
         "order_id": str(order.id),
         "created_at": _iso(order.created_at),
@@ -160,7 +187,7 @@ def _serialize_order(order: Order) -> dict:
         "tier_qty": order.tier_qty,
         "cross_sell_slug": order.cross_sell_slug,
         "upsell_slug": order.upsell_slug,
-        "pack_label": _pack_label(order),
+        "pack_label": _pack_label(order, session),
         "total": cents_to_mad(order.total_cents),
         "currency": order.currency,
         "status": _display_status(order.status),
@@ -395,7 +422,12 @@ def _dispatch_one(
     return {"order_id": order_id, "success": True, "tracking": code, "error": "", "carrier": carrier_id}
 
 
-def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols: set[str] | None = None) -> Order:
+def apply_order_update(
+    order: Order,
+    payload: OrderUpdate | dict[str, Any],
+    cols: set[str] | None = None,
+    session: Session | None = None,
+) -> Order:
     known = cols if cols is not None else set()
     if isinstance(payload, OrderUpdate):
         data = payload.model_dump(exclude_unset=True)
@@ -459,7 +491,9 @@ def apply_order_update(order: Order, payload: OrderUpdate | dict[str, Any], cols
             if region_id:
                 _assign(order, known, "region_id", region_id)
     if "product_slug" in data and data["product_slug"]:
-        _assign(order, known, "product_slug", str(data["product_slug"]))
+        raw = str(data["product_slug"]).strip()[:64]
+        slug = resolve_order_slug(session, raw) if session is not None else raw
+        _assign(order, known, "product_slug", slug or order.product_slug)
     if "tier_qty" in data and data["tier_qty"]:
         qty = int(data["tier_qty"])
         if qty < 1 or qty > 20:
@@ -702,7 +736,7 @@ def admin_orders(
     orders = session.exec(stmt).all()
     cities = session.exec(select(Order.city).distinct().order_by(Order.city)).all()
     return {
-        "orders": [_serialize_order(o) for o in orders],
+        "orders": [_serialize_order(o, session) for o in orders],
         "cities": [c for c in cities if c],
     }
 
@@ -742,10 +776,8 @@ def admin_create_order(
         raise HTTPException(status_code=422, detail="invalid_price") from exc
     if cents < 100:
         raise HTTPException(status_code=422, detail="invalid_price")
-    slug = str(body.get("product_slug") or "quran")
-    if slug not in ("quran", "kids", "music", "educative"):
-        slug = "quran"
-    allowed_cross = ("quran", "kids", "music", "educative", "extra")
+    slug = resolve_order_slug(session, str(body.get("product_slug") or "quran"))
+    allowed_cross = ("quran", "kids", "music", "educative", "taalim", "extra")
     cross = str(body.get("cross_sell_slug") or body.get("secondary_product") or "").strip() or None
     if cross not in allowed_cross:
         cross = None
@@ -791,7 +823,7 @@ def admin_create_order(
         session.add(order)
         session.commit()
         session.refresh(order)
-        return _serialize_order(order)
+        return _serialize_order(order, session)
     except Exception:
         session.rollback()
         session.execute(
@@ -817,7 +849,7 @@ def admin_create_order(
         created = _load_order(session, str(order_id))
         if not created:
             raise HTTPException(status_code=500, detail="create_failed")
-        return _serialize_order(created)
+        return _serialize_order(created, session)
 
 
 @router.patch("/orders/{order_id}")
@@ -850,7 +882,7 @@ def admin_update_order(
             session.add(order)
             session.commit()
             session.refresh(order)
-            return _serialize_order(order)
+            return _serialize_order(order, session)
         except HTTPException:
             session.rollback()
             raise
@@ -864,13 +896,13 @@ def admin_update_order(
             order = _load_order(session, str(order.id))
             if not order:
                 raise HTTPException(status_code=404, detail="order_not_found")
-            return _serialize_order(order)
+            return _serialize_order(order, session)
     try:
-        apply_order_update(order, body, cols)
+        apply_order_update(order, body, cols, session)
         session.add(order)
         session.commit()
         session.refresh(order)
-        return _serialize_order(order)
+        return _serialize_order(order, session)
     except HTTPException:
         session.rollback()
         raise
@@ -890,7 +922,10 @@ def admin_update_order(
                 official = city if is_official_meta_city(city) else resolve_meta_city(city)
                 if official and is_official_meta_city(official):
                     shipping = official
-        slug = str(data.get("product_slug") or data.get("primary_product") or data.get("productSlug") or order.product_slug)
+        slug = resolve_order_slug(
+            session,
+            str(data.get("product_slug") or data.get("primary_product") or data.get("productSlug") or order.product_slug),
+        )
         qty = int(data.get("tier_qty") or data.get("primary_qty") or data.get("tierQty") or order.tier_qty or 1)
         total = data.get("total_mad") if data.get("total_mad") is not None else data.get("total_price") or data.get("totalMad") or data.get("totalPrice")
         cents = int(round(float(total) * 100)) if total is not None else order.total_cents
@@ -931,7 +966,7 @@ def admin_update_order(
         order = _load_order(session, str(order.id))
         if not order:
             raise HTTPException(status_code=404, detail="order_not_found")
-        return _serialize_order(order)
+        return _serialize_order(order, session)
 
 
 @router.post("/orders/bulk-livraison")
@@ -1140,7 +1175,7 @@ async def admin_send_livraison(order_id: str, request: Request):
                     ),
                 )
             session.refresh(order)
-            return JSONResponse({**_serialize_order(order), "success": True})
+            return JSONResponse({**_serialize_order(order, session), "success": True})
     except BaseException as e:
         tb = traceback.format_exc()
         print(f"[LIVRAISON_FATAL_ERROR] {tb}", flush=True)

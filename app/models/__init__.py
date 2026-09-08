@@ -12,11 +12,13 @@ class Product(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     slug: str = Field(unique=True, index=True, max_length=64)
+    code: str = Field(default="", unique=True, index=True, max_length=64)
     name_ar: str = Field(max_length=160)
     name_en: str = Field(max_length=160)
     tagline_ar: str = Field(max_length=240, default="")
     description_ar: str = Field(default="")
     accent: str = Field(max_length=32, default="gold")
+    default_price_cents: int = Field(default=0)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utcnow)
 

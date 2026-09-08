@@ -5,6 +5,13 @@ from sqlmodel import Session, select
 
 from app.models import Product
 
+DEFAULT_PRICES_CENTS = {
+    "quran": 19900,
+    "kids": 14900,
+    "music": 19900,
+    "educative": 19900,
+}
+
 CATALOG = [
     {
         "slug": "quran",
@@ -44,6 +51,7 @@ CATALOG = [
 def seed_products(session: Session) -> None:
     for item in CATALOG:
         existing = session.exec(select(Product).where(Product.slug == item["slug"])).first()
+        price = DEFAULT_PRICES_CENTS.get(item["slug"], 0)
         if existing:
             existing.name_ar = item["name_ar"]
             existing.name_en = item["name_en"]
@@ -51,16 +59,22 @@ def seed_products(session: Session) -> None:
             existing.description_ar = item["description_ar"]
             existing.accent = item["accent"]
             existing.is_active = True
+            if not getattr(existing, "code", None):
+                existing.code = item["slug"].upper()
+            if not int(getattr(existing, "default_price_cents", 0) or 0) and price:
+                existing.default_price_cents = price
             continue
         session.add(
             Product(
                 id=uuid4(),
                 slug=item["slug"],
+                code=item["slug"].upper(),
                 name_ar=item["name_ar"],
                 name_en=item["name_en"],
                 tagline_ar=item["tagline_ar"],
                 description_ar=item["description_ar"],
                 accent=item["accent"],
+                default_price_cents=price,
                 created_at=datetime.now(timezone.utc),
             )
         )

@@ -15,6 +15,7 @@ from app.api.orders import router as orders_router
 from app.api.products import router as products_router
 from app.api.tracking import router as tracking_router
 from app.routers.admin import router as admin_router
+from app.routers.admin_products import router as admin_products_router
 from app.config import settings
 from app.db import engine, ensure_order_columns
 from app.models import CityTarif, Order, OrderItem, Product, TrackingEvent, PageView, PushSubscription  # noqa: F401
@@ -94,6 +95,7 @@ app.include_router(cities_router)
 app.include_router(orders_router)
 app.include_router(tracking_router)
 app.include_router(admin_router)
+app.include_router(admin_products_router)
 
 
 @app.exception_handler(Exception)
