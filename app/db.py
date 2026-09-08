@@ -38,6 +38,19 @@ ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ALTER COLUMN city TYPE varchar(160)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier varchar(50) DEFAULT 'meta_livraison' NOT NULL",
     "CREATE INDEX IF NOT EXISTS ix_orders_carrier ON orders (carrier)",
+    "CREATE INDEX IF NOT EXISTS ix_orders_created_at ON orders (created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_orders_confirmed_at ON orders (confirmed_at)",
+    "CREATE INDEX IF NOT EXISTS ix_orders_meta_livraison_code ON orders (meta_livraison_code)",
+    """
+    CREATE INDEX IF NOT EXISTS ix_orders_undispatched_status_created
+    ON orders (status, created_at DESC)
+    WHERE COALESCE(BTRIM(meta_livraison_code), '') = ''
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS ix_orders_undispatched_confirmed
+    ON orders (confirmed_at)
+    WHERE COALESCE(BTRIM(meta_livraison_code), '') = ''
+    """,
 )
 
 PAGE_VIEWS_SQL = (

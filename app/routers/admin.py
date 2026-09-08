@@ -40,7 +40,7 @@ from app.services.carriers import (
 )
 from app.services.carriers.quick import sync_quick_districts
 from app.services.meta_livraison_cities import is_official_meta_city, resolve_meta_city
-from app.services.regions import region_id_for_city
+from app.services.undispatched import undispatched_summary
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -739,6 +739,15 @@ def admin_orders(
         "orders": [_serialize_order(o, session) for o in orders],
         "cities": [c for c in cities if c],
     }
+
+
+@router.get("/orders/undispatched-summary")
+def admin_undispatched_summary(
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    return undispatched_summary(session)
 
 
 @router.post("/orders", status_code=201)
