@@ -67,16 +67,6 @@ async def lifespan(_: FastAPI):
         pass
 
 
-class RequestLogMiddleware:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope.get("type") == "http":
-            print(f"REQ {scope.get('method')} {scope.get('path')}", flush=True)
-        await self.app(scope, receive, send)
-
-
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 print("[BOOT] exception logging enabled", flush=True)
 
@@ -99,12 +89,10 @@ async def all_exception_handler(request: Request, exc: Exception):
         return PlainTextResponse(f"Internal Server Error: {type(exc).__name__}: {exc}", status_code=500)
 
 
-app.add_middleware(RequestLogMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list or ["*"],
-    allow_origin_regex=r"https://([a-z0-9-]+\.)?chifaglow\.com|http://localhost:\d+",
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
