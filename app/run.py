@@ -23,35 +23,39 @@ def _make_tls_context() -> ssl.SSLContext | None:
     tmp = Path(tempfile.gettempdir())
     cert = tmp / "chifaglow-gate.crt"
     key = tmp / "chifaglow-gate.key"
-    if not cert.exists() or not key.exists():
-        try:
-            subprocess.run(
-                [
-                    "openssl",
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-keyout",
-                    str(key),
-                    "-out",
-                    str(cert),
-                    "-days",
-                    "3650",
-                    "-nodes",
-                    "-subj",
-                    "/CN=localhost",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            print(f"[GATE] openssl cert skipped: {exc}", flush=True)
-            return None
+    try:
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-sha256",
+                "-keyout",
+                str(key),
+                "-out",
+                str(cert),
+                "-days",
+                "3650",
+                "-nodes",
+                "-subj",
+                "/CN=api.chifaglow.com",
+                "-addext",
+                "subjectAltName=DNS:api.chifaglow.com,DNS:localhost,DNS:*.chifaglow.com,IP:127.0.0.1",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        print(f"[GATE] openssl cert skipped: {exc}", flush=True)
+        return None
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     ctx.load_cert_chain(str(cert), str(key))
-    ctx.set_alpn_protocols(["http/1.1"])
+    print("[GATE] TLS context verify_mode=CERT_NONE check_hostname=False", flush=True)
     return ctx
 
 
