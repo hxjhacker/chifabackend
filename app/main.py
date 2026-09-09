@@ -89,19 +89,25 @@ async def all_exception_handler(request: Request, exc: Exception):
         return PlainTextResponse(f"Internal Server Error: {type(exc).__name__}: {exc}", status_code=500)
 
 
+@app.middleware("http")
+async def safe_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as err:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Middleware execution failed", "error": str(err)},
+        )
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.get("/")
-def root():
-    return {"ok": True, "service": settings.app_name}
-
 
 app.include_router(health_router)
 app.include_router(products_router)
@@ -110,3 +116,8 @@ app.include_router(orders_router)
 app.include_router(tracking_router)
 app.include_router(admin_router)
 app.include_router(admin_products_router)
+
+
+@app.get("/")
+def root():
+    return {"status": "online", "service": "Chifa Glow API"}
