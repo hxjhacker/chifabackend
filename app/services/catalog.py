@@ -63,6 +63,7 @@ def dump_product(product: Product) -> dict:
         "slug": product.slug,
         "default_price": round(cents / 100, 2),
         "default_price_cents": cents,
+        "quick_product_id": getattr(product, "quick_product_id", None),
         "is_active": bool(product.is_active),
         "created_at": product.created_at.isoformat() if product.created_at else None,
     }
@@ -91,6 +92,18 @@ def resolve_order_slug(session: Session, raw: str) -> str:
         return hit.slug
     code = clean_product_code(raw)
     return code or "quran"
+
+
+def parse_quick_product_id(raw: object) -> int | None:
+    if raw in (None, ""):
+        return None
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise ValueError("invalid_quick_product_id") from None
+    if value < 1:
+        raise ValueError("invalid_quick_product_id")
+    return value
 
 
 def product_label(session: Session, slug: str) -> str:

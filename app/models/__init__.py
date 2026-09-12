@@ -19,6 +19,7 @@ class Product(SQLModel, table=True):
     description_ar: str = Field(default="")
     accent: str = Field(max_length=32, default="gold")
     default_price_cents: int = Field(default=0)
+    quick_product_id: int | None = Field(default=None, index=True)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utcnow)
 

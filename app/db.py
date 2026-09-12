@@ -112,6 +112,8 @@ PRODUCTS_SQL = (
     "UPDATE products SET default_price_cents = 19900 WHERE slug IN ('music', 'educative') AND (default_price_cents IS NULL OR default_price_cents = 0)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_products_code ON products (code)",
     "ALTER TABLE products ALTER COLUMN code SET NOT NULL",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS quick_product_id integer",
+    "CREATE INDEX IF NOT EXISTS ix_products_quick_product_id ON products (quick_product_id)",
 )
 
 

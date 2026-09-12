@@ -14,6 +14,7 @@ from app.services.catalog import (
     auto_product_code,
     clean_product_code,
     dump_product,
+    parse_quick_product_id,
     unique_code,
     unique_slug,
 )
@@ -25,6 +26,7 @@ class ProductIn(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     code: str = ""
     default_price: float | None = 0
+    quick_product_id: int | str | None = None
     is_active: bool | None = True
 
 
@@ -32,7 +34,15 @@ class ProductPatch(BaseModel):
     name: str | None = Field(default=None, max_length=160)
     code: str | None = None
     default_price: float | None = None
+    quick_product_id: int | str | None = None
     is_active: bool | None = None
+
+
+def _quick_id(value: int | str | None) -> int | None:
+    try:
+        return parse_quick_product_id(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _price_cents(value: float | None) -> int:
@@ -82,6 +92,7 @@ def admin_create_product(
         name_ar=name,
         name_en=name,
         default_price_cents=_price_cents(payload.default_price),
+        quick_product_id=_quick_id(payload.quick_product_id),
         is_active=True if payload.is_active is None else bool(payload.is_active),
         accent="gold",
     )
@@ -114,6 +125,8 @@ def admin_patch_product(
             product.slug = unique_slug(session, product.code, exclude_id=product.id)
     if payload.default_price is not None:
         product.default_price_cents = _price_cents(payload.default_price)
+    if "quick_product_id" in payload.model_fields_set:
+        product.quick_product_id = _quick_id(payload.quick_product_id)
     if payload.is_active is not None:
         product.is_active = bool(payload.is_active)
     session.add(product)

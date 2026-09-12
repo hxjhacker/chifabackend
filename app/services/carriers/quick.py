@@ -401,11 +401,14 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
                 )
         return res.status_code, _parse_http_body(res), res.text
 
-    def _district_from_db(self, order: Any) -> int | None:
+    def _district_from_db(self, order: Any, *, allow_hub: bool = True) -> int | None:
         names = _candidate_city_names(order)
         with Session(engine) as session:
             mapping = _mapping_from_tarif_rows(list(session.exec(select(CityTarif)).all()))
-        return _district_from_mapping(mapping, names) or _hub_district(mapping)
+        found = _district_from_mapping(mapping, names)
+        if found:
+            return found
+        return _hub_district(mapping) if allow_hub else None
 
     async def resolve_district_id(self, order: Any) -> int | None:
         stored = self._district_from_db(order)
@@ -415,6 +418,33 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         mapping = _mapping_from_city_rows(_city_rows(payload))
         names = _candidate_city_names(order)
         return _district_from_mapping(mapping, names) or _hub_district(mapping)
+
+    def mapped_district_id(self, order: Any, session: Session | None = None) -> int | None:
+        """City district_id from Quick getCityIDs mapping. No hub-city fallback."""
+        names = _candidate_city_names(order)
+        if session is not None:
+            mapping = _mapping_from_tarif_rows(list(session.exec(select(CityTarif)).all()))
+            found = _district_from_mapping(mapping, names)
+            if found:
+                return found
+        return self._district_from_db(order, allow_hub=False)
+
+    async def resolve_mapped_district_id(self, order: Any, session: Session | None = None) -> int | None:
+        found = self.mapped_district_id(order, session)
+        if found:
+            return found
+        payload = await self._get("/getCityIDs")
+        mapping = _mapping_from_city_rows(_city_rows(payload))
+        return _district_from_mapping(mapping, _candidate_city_names(order))
+
+    async def _post_store_json(self, payload: dict[str, Any]) -> tuple[int, Any, str]:
+        """Official Quick stock create: JSON body to POST /deliveries/store."""
+        url = f"{_base_url()}/deliveries/store"
+        body = {**payload, "api_key": _api_key()}
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+            res = await client.post(url, json=body, headers=headers)
+        return res.status_code, _parse_http_body(res), res.text
 
     async def list_products(self) -> list[dict[str, Any]]:
         payload = await self._get("/getProductIDs")
@@ -568,9 +598,14 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         payload = self._parcel_payload(order, district_id)
         return await self._store_parcel(order, payload)
 
-    async def create_stock_order(self, order: Any, order_data: dict[str, Any] | None = None) -> dict[str, Any]:
-        data = order_data or {}
-        sku = str(data.get("product_code") or data.get("sku") or getattr(order, "product_code", "") or "").strip()
+    async def create_stock_delivery(
+        self,
+        payload: dict[str, Any],
+        *,
+        session: Session | None = None,
+        order: Any = None,
+    ) -> dict[str, Any]:
+        """POST /deliveries/store with the official JSON stock payload."""
         if not self.is_configured():
             return {
                 "ok": False,
@@ -578,37 +613,100 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
                 "ticket_url": "",
                 "carrier": self.carrier_id,
                 "error": "quick_livraison_not_configured",
+                "status_code": 400,
             }
-        if not sku:
-            return {
-                "ok": False,
-                "tracking_number": "",
-                "ticket_url": "",
-                "carrier": self.carrier_id,
-                "error": "product_sku_missing",
-            }
-        district_id = await self.resolve_district_id(order)
-        if not district_id:
+        body = dict(payload)
+        district_id = _as_int(body.get("district_id"))
+        if not district_id and order is not None:
+            district_id = await self.resolve_mapped_district_id(order, session)
+            if district_id:
+                body["district_id"] = int(district_id)
+        if not _as_int(body.get("district_id")):
             return {
                 "ok": False,
                 "tracking_number": "",
                 "ticket_url": "",
                 "carrier": self.carrier_id,
                 "error": "quick_district_not_mapped",
+                "status_code": 400,
             }
-        qty = _as_int(data.get("quantity")) or _qty(order)
-        note = str(data.get("note") if data.get("note") is not None else getattr(order, "courier_notes", "") or "").strip()
-        product_id = await self.resolve_product_id(sku, _product_name(order))
-        payload = self._parcel_payload(
-            order,
-            district_id,
-            from_stock=True,
-            product_code=sku,
-            product_id=product_id,
-            quantity=qty,
-            note=note,
+        received = body.get("received_quantity")
+        if not isinstance(received, dict) or not received:
+            return {
+                "ok": False,
+                "tracking_number": "",
+                "ticket_url": "",
+                "carrier": self.carrier_id,
+                "error": "quick_product_id_missing",
+                "status_code": 400,
+            }
+        body = {key: value for key, value in body.items() if value is not None}
+        status_code, parsed, text = await self._post_store_json(body)
+        tracking = ""
+        if isinstance(parsed, dict):
+            tracking = str(parsed.get("tracking_number") or "").strip()
+        if not tracking:
+            tracking = _tracking_from(parsed)
+        if not _store_succeeded(status_code, parsed) or not tracking:
+            return {
+                "ok": False,
+                "tracking_number": tracking,
+                "ticket_url": "",
+                "carrier": self.carrier_id,
+                "error": _error_detail(parsed, text),
+                "raw": parsed,
+                "status_code": status_code if status_code >= 400 else 400,
+            }
+        ticket = ""
+        if isinstance(parsed, dict):
+            ticket = str(parsed.get("ticket_url") or parsed.get("tracking_url") or parsed.get("url") or "").strip()
+        return {
+            "ok": True,
+            "tracking_number": tracking,
+            "code_envoi": tracking,
+            "ticket_url": ticket,
+            "carrier": self.carrier_id,
+            "error": "",
+            "raw": parsed,
+            "status_code": status_code,
+        }
+
+    async def create_stock_order(self, order: Any, order_data: dict[str, Any] | None = None) -> dict[str, Any]:
+        data = order_data or {}
+        product_id = _as_int(data.get("quick_product_id") or data.get("product_id") or data.get("prd_id"))
+        if not product_id:
+            return {
+                "ok": False,
+                "tracking_number": "",
+                "ticket_url": "",
+                "carrier": self.carrier_id,
+                "error": "quick_product_id_missing",
+                "status_code": 400,
+            }
+        qty = _as_int(data.get("quantity") or data.get("received_quantity")) or _qty(order)
+        phone = _national_phone(
+            str(getattr(order, "phone", "") or ""),
+            str(getattr(order, "phone_national", "") or ""),
         )
-        return await self._store_parcel(order, payload)
+        city = str(getattr(order, "city", "") or getattr(order, "shipping_city", "") or "").strip()
+        address = str(data.get("address") or getattr(order, "address", "") or "").strip() or city
+        note = str(data.get("note") if data.get("note") is not None else getattr(order, "courier_notes", "") or "")
+        code = data.get("code")
+        if code in (None, ""):
+            code = getattr(order, "code", None)
+        payload: dict[str, Any] = {
+            "district_id": _as_int(data.get("district_id")),
+            "name": str(data.get("name") or getattr(order, "full_name", "") or "").strip() or "Client",
+            "phone": phone,
+            "address": address,
+            "amount": _order_amount(order),
+            "note": note,
+            "open": False,
+            "received_quantity": {str(int(product_id)): qty if qty > 0 else 1},
+        }
+        if code not in (None, ""):
+            payload["code"] = str(code)
+        return await self.create_stock_delivery(payload, order=order)
 
     async def get_tracking_status(self, tracking_number: str) -> dict[str, Any]:
         code = str(tracking_number or "").strip()
