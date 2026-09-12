@@ -73,6 +73,8 @@ class Order(SQLModel, table=True):
     meta_livraison_sent_at: datetime | None = Field(default=None)
     meta_livraison_ticket_url: str | None = Field(default=None)
     carrier: str = Field(default="meta_livraison", max_length=50, index=True)
+    carrier_status: str | None = Field(default=None, max_length=50)
+    dispatched_at: datetime | None = Field(default=None)
 
     items: list["OrderItem"] = Relationship(back_populates="order")
 

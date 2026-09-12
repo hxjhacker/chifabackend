@@ -18,7 +18,8 @@ from sqlmodel import Session, col, select
 from app.db import engine, get_session
 from app.dependencies import client_ip, get_current_admin
 from app.models import Order, Product
-from app.services.catalog import resolve_order_slug
+from app.services.catalog import clean_product_code, find_product, resolve_order_slug
+from app.services.quick_livraison import create_stock_order
 from app.rate_limit import login_limiter
 from app.security import (
     admin_configured,
@@ -122,6 +123,35 @@ def _has_complete_confirm_details(order: Order) -> bool:
     return len(rest) >= 5
 
 
+def _product_code_map(session: Session | None) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    if session is None:
+        return mapping
+    cached = getattr(session, "_product_code_cache", None)
+    if isinstance(cached, dict):
+        return cached
+    try:
+        for product in session.exec(select(Product)).all():
+            code = str(getattr(product, "code", None) or product.slug or "").strip().upper()
+            if not code:
+                continue
+            mapping[product.slug] = code
+            mapping[code] = code
+            mapping[str(product.id)] = code
+        setattr(session, "_product_code_cache", mapping)
+    except Exception:
+        mapping = {}
+    return mapping
+
+
+def _order_product_code(order: Order, session: Session | None = None) -> str:
+    slug = str(getattr(order, "product_slug", "") or "").strip()
+    mapped = _product_code_map(session).get(slug)
+    if mapped:
+        return mapped
+    return clean_product_code(slug) or slug.upper()
+
+
 def _product_labels(session: Session | None) -> dict[str, str]:
     labels = dict(PACK_NAMES)
     if session is None:
@@ -219,7 +249,11 @@ def _serialize_order(order: Order, session: Session | None = None) -> dict:
         "meta_livraison_sent_at": _iso(getattr(order, "meta_livraison_sent_at", None)),
         "meta_livraison_ticket_url": getattr(order, "meta_livraison_ticket_url", None),
         "carrier": normalize_carrier(getattr(order, "carrier", None)),
+        "carrier_status": getattr(order, "carrier_status", None),
+        "dispatched_at": _iso(getattr(order, "dispatched_at", None)),
+        "product_code": _order_product_code(order, session),
         "tracking_number": getattr(order, "meta_livraison_code", None),
+        "code_envoi": getattr(order, "meta_livraison_code", None),
     }
 
 
@@ -353,6 +387,8 @@ def _persist_shipped(
     _assign(order, cols, "meta_livraison_ticket_url", ticket_url)
     _assign(order, cols, "meta_livraison_sent_at", getattr(order, "meta_livraison_sent_at", None) or now)
     _assign(order, cols, "carrier", carrier_id)
+    _assign(order, cols, "carrier_status", "sent_to_carrier")
+    _assign(order, cols, "dispatched_at", getattr(order, "dispatched_at", None) or now)
     _assign(order, cols, "status", "shipped")
     _stamp_status(order, "shipped", cols)
     _assign(order, cols, "updated_at", now)
@@ -1306,3 +1342,108 @@ async def admin_send_livraison(order_id: str, request: Request):
                 "traceback": tb,
             },
         )
+
+
+@router.post("/orders/{order_id}/dispatch-quick-stock")
+def admin_dispatch_quick_stock(
+    order_id: str,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    order = _load_order(session, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    status_now = _display_status(str(getattr(order, "status", "") or ""))
+    if status_now == "cancelled":
+        raise HTTPException(status_code=400, detail="cannot_ship_cancelled")
+    if len(str(getattr(order, "city", "") or "").strip()) < 2:
+        raise HTTPException(status_code=400, detail="invalid_city")
+    existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
+    if existing:
+        payload = _serialize_order(order, session)
+        payload.update({"success": True, "tracking_number": existing, "code_envoi": existing})
+        return payload
+    if not _has_complete_confirm_details(order):
+        raise HTTPException(status_code=400, detail="confirmation_details_required")
+
+    product = find_product(session, str(order.product_slug or ""))
+    sku = str(getattr(product, "code", None) or "").strip().upper() or _order_product_code(order, session)
+    if not sku:
+        raise HTTPException(status_code=400, detail="product_sku_missing")
+    qty = int(getattr(order, "tier_qty", 1) or 1)
+    if qty < 1:
+        qty = 1
+    phone = str(getattr(order, "phone_national", "") or getattr(order, "phone", "") or "")
+    try:
+        result = run_sync(
+            create_stock_order(
+                {
+                    "order": order,
+                    "client_name": str(order.full_name or "").strip() or "Client",
+                    "phone": phone,
+                    "city": str(getattr(order, "shipping_city", None) or order.city or "").strip(),
+                    "address": _composed_address(order),
+                    "price": cents_to_mad(order.total_cents),
+                    "product_code": sku,
+                    "sku": sku,
+                    "quantity": qty,
+                    "from_stock": True,
+                    "note": str(getattr(order, "courier_notes", "") or "").strip(),
+                    "code": str(order.id).replace("-", "")[:8].upper(),
+                }
+            )
+        )
+    except Exception as exc:
+        detail = str(exc) or "quick_stock_failed"
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "origin": "quick_livraison",
+                "detail": detail,
+                "message": detail,
+                "product_code": sku,
+                "quantity": qty,
+            },
+        )
+    if not result.get("ok"):
+        detail = str(result.get("error") or "quick_stock_failed")
+        return JSONResponse(
+            status_code=400,
+            content=jsonable_encoder(
+                {
+                    "success": False,
+                    "origin": "quick_livraison",
+                    "detail": detail,
+                    "message": detail,
+                    "product_code": sku,
+                    "quantity": qty,
+                }
+            ),
+        )
+    tracking = str(result.get("tracking_number") or result.get("code_envoi") or "").strip()
+    if not tracking:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "origin": "quick_livraison",
+                "detail": "quick_stock_no_tracking",
+                "message": "Quick Livraison لم تُرجع كود التتبع.",
+            },
+        )
+    ticket = str(result.get("ticket_url") or "").strip() or None
+    _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison")
+    session.refresh(order)
+    payload = _serialize_order(order, session)
+    payload.update(
+        {
+            "success": True,
+            "tracking_number": tracking,
+            "code_envoi": tracking,
+            "product_code": sku,
+            "quantity": qty,
+        }
+    )
+    return payload

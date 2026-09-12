@@ -248,12 +248,54 @@ def _mapping_from_city_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
     return mapping
 
 
+def _product_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("data", "products", "result", "results", "items"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [row for row in value if isinstance(row, dict)]
+        if isinstance(value, dict):
+            nested = _product_rows(value)
+            if nested:
+                return nested
+    return []
+
+
+def _product_id(row: dict[str, Any]) -> int | None:
+    for key in ("product_id", "productId", "prd_id", "prdId", "id"):
+        found = _as_int(row.get(key))
+        if found is not None:
+            return found
+    return None
+
+
+def _product_sku(row: dict[str, Any]) -> str:
+    for key in ("sku", "code", "product_code", "productCode", "ref", "reference", "prd_code"):
+        text = str(row.get(key) or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _product_label(row: dict[str, Any]) -> str:
+    for key in ("name", "prd_name", "label", "title", "product_name"):
+        text = str(row.get(key) or "").strip()
+        if text:
+            return text
+    return ""
+
+
 def _tracking_from(payload: Any) -> str:
     if isinstance(payload, dict):
         for key in (
             "tracking_number",
             "trackingNumber",
             "tracking",
+            "code_envoi",
+            "codeEnvoi",
             "code",
             "parcel_code",
             "parcelCode",
@@ -374,24 +416,49 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         names = _candidate_city_names(order)
         return _district_from_mapping(mapping, names) or _hub_district(mapping)
 
-    async def create_shipment(self, order: Any) -> dict[str, Any]:
-        if not self.is_configured():
-            return {
-                "ok": False,
-                "tracking_number": "",
-                "ticket_url": "",
-                "carrier": self.carrier_id,
-                "error": "quick_livraison_not_configured",
-            }
-        district_id = await self.resolve_district_id(order)
-        if not district_id:
-            return {
-                "ok": False,
-                "tracking_number": "",
-                "ticket_url": "",
-                "carrier": self.carrier_id,
-                "error": "quick_district_not_mapped",
-            }
+    async def list_products(self) -> list[dict[str, Any]]:
+        payload = await self._get("/getProductIDs")
+        rows = []
+        for row in _product_rows(payload):
+            product_id = _product_id(row)
+            sku = _product_sku(row)
+            name = _product_label(row)
+            if product_id or sku or name:
+                rows.append({"product_id": product_id, "sku": sku, "name": name, "raw": row})
+        return rows
+
+    async def resolve_product_id(self, sku: str, name: str = "") -> int | None:
+        wanted = fold_city(sku)
+        wanted_name = fold_city(name)
+        if not wanted and not wanted_name:
+            return None
+        try:
+            products = await self.list_products()
+        except Exception:
+            return None
+        for row in products:
+            row_sku = fold_city(str(row.get("sku") or ""))
+            row_name = fold_city(str(row.get("name") or ""))
+            product_id = _as_int(row.get("product_id"))
+            if not product_id:
+                continue
+            if wanted and row_sku and (row_sku == wanted or wanted in row_sku or row_sku in wanted):
+                return product_id
+            if wanted_name and row_name and row_name == wanted_name:
+                return product_id
+        return None
+
+    def _parcel_payload(
+        self,
+        order: Any,
+        district_id: int,
+        *,
+        from_stock: bool = False,
+        product_code: str = "",
+        product_id: int | None = None,
+        quantity: int | None = None,
+        note: str | None = None,
+    ) -> dict[str, Any]:
         phone = _national_phone(
             str(getattr(order, "phone", "") or ""),
             str(getattr(order, "phone_national", "") or ""),
@@ -410,11 +477,15 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         name = str(getattr(order, "full_name", "") or "").strip() or "Client"
         order_amount = _order_amount(order)
         code = str(getattr(order, "code", None) or getattr(order, "id", "") or "")
-        payload = {
+        qty = quantity if quantity is not None else _qty(order)
+        comment = note if note is not None else str(getattr(order, "courier_notes", "") or "").strip()
+        sku = str(product_code or getattr(order, "product_code", "") or "").strip()
+        payload: dict[str, Any] = {
             "district_id": int(district_id),
             "city_id": int(district_id),
             "name": name,
             "receiver_name": name,
+            "client_name": name,
             "phone": phone,
             "tel": phone,
             "address": address,
@@ -427,12 +498,31 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
             "code": code,
             "open": "true",
             "prd_name": _product_name(order),
-            "qte_prd": _qty(order),
-            "comment": str(getattr(order, "courier_notes", "") or "").strip(),
-            "note": str(getattr(order, "courier_notes", "") or "").strip(),
+            "qte_prd": qty,
+            "quantity": qty,
+            "comment": comment,
+            "note": comment,
             "client_order_ref": code,
             "open_package": 1,
         }
+        if sku:
+            payload["product_code"] = sku
+            payload["sku"] = sku
+            payload["prd_code"] = sku
+        if product_id:
+            payload["product_id"] = int(product_id)
+            payload["prd_id"] = int(product_id)
+        if from_stock:
+            payload["from_stock"] = 1
+            payload["stock"] = 1
+            payload["is_stock"] = 1
+            payload["expedition_type"] = "stock"
+            payload["type_envoi"] = "stock"
+            payload["ramassage"] = 0
+        return payload
+
+    async def _store_parcel(self, order: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        code = str(payload.get("code") or getattr(order, "id", "") or "")
         status_code, parsed, text = await self._post_store(payload)
         tracking = _tracking_from(parsed) or (code if _store_succeeded(status_code, parsed) else "")
         if not _store_succeeded(status_code, parsed) or not tracking:
@@ -444,14 +534,81 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
                 "error": _error_detail(parsed, text),
                 "raw": parsed,
             }
+        ticket = ""
+        if isinstance(parsed, dict):
+            ticket = str(parsed.get("ticket_url") or parsed.get("tracking_url") or parsed.get("url") or "").strip()
         return {
             "ok": True,
             "tracking_number": tracking,
-            "ticket_url": "",
+            "code_envoi": tracking,
+            "ticket_url": ticket,
             "carrier": self.carrier_id,
             "error": "",
             "raw": parsed,
         }
+
+    async def create_shipment(self, order: Any) -> dict[str, Any]:
+        if not self.is_configured():
+            return {
+                "ok": False,
+                "tracking_number": "",
+                "ticket_url": "",
+                "carrier": self.carrier_id,
+                "error": "quick_livraison_not_configured",
+            }
+        district_id = await self.resolve_district_id(order)
+        if not district_id:
+            return {
+                "ok": False,
+                "tracking_number": "",
+                "ticket_url": "",
+                "carrier": self.carrier_id,
+                "error": "quick_district_not_mapped",
+            }
+        payload = self._parcel_payload(order, district_id)
+        return await self._store_parcel(order, payload)
+
+    async def create_stock_order(self, order: Any, order_data: dict[str, Any] | None = None) -> dict[str, Any]:
+        data = order_data or {}
+        sku = str(data.get("product_code") or data.get("sku") or getattr(order, "product_code", "") or "").strip()
+        if not self.is_configured():
+            return {
+                "ok": False,
+                "tracking_number": "",
+                "ticket_url": "",
+                "carrier": self.carrier_id,
+                "error": "quick_livraison_not_configured",
+            }
+        if not sku:
+            return {
+                "ok": False,
+                "tracking_number": "",
+                "ticket_url": "",
+                "carrier": self.carrier_id,
+                "error": "product_sku_missing",
+            }
+        district_id = await self.resolve_district_id(order)
+        if not district_id:
+            return {
+                "ok": False,
+                "tracking_number": "",
+                "ticket_url": "",
+                "carrier": self.carrier_id,
+                "error": "quick_district_not_mapped",
+            }
+        qty = _as_int(data.get("quantity")) or _qty(order)
+        note = str(data.get("note") if data.get("note") is not None else getattr(order, "courier_notes", "") or "").strip()
+        product_id = await self.resolve_product_id(sku, _product_name(order))
+        payload = self._parcel_payload(
+            order,
+            district_id,
+            from_stock=True,
+            product_code=sku,
+            product_id=product_id,
+            quantity=qty,
+            note=note,
+        )
+        return await self._store_parcel(order, payload)
 
     async def get_tracking_status(self, tracking_number: str) -> dict[str, Any]:
         code = str(tracking_number or "").strip()
