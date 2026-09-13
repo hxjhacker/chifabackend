@@ -19,7 +19,7 @@ from app.db import engine, get_session
 from app.dependencies import client_ip, get_current_admin
 from app.models import Order, Product
 from app.services.catalog import clean_product_code, resolve_order_slug
-from app.services.quick_livraison import dispatch_order_from_stock
+from app.services.quick_livraison import QUICK_STOCK_PRODUCT_KH01, create_quick_stock_order
 from app.rate_limit import login_limiter
 from app.security import (
     admin_configured,
@@ -78,6 +78,11 @@ class BulkOrderIds(BaseModel):
     order_ids: list[str] = Field(default_factory=list)
     tracking_numbers: list[str] = Field(default_factory=list)
     carrier: str | None = None
+
+
+class QuickStockDispatchRequest(BaseModel):
+    product_id: int = Field(default=QUICK_STOCK_PRODUCT_KH01, ge=1)
+    quantity: int = Field(default=1, ge=1)
 
 
 def _display_status(raw: str) -> str:
@@ -1379,8 +1384,9 @@ async def admin_send_livraison(order_id: str, request: Request):
 
 
 @router.post("/orders/{order_id}/dispatch-quick-stock")
-def admin_dispatch_quick_stock(
+async def admin_dispatch_quick_stock(
     order_id: str,
+    body: QuickStockDispatchRequest = Body(default_factory=QuickStockDispatchRequest),
     admin: dict = Depends(get_current_admin),
     session: Session = Depends(get_session),
 ):
@@ -1396,28 +1402,30 @@ def admin_dispatch_quick_stock(
     existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
     if existing:
         payload = _serialize_order(order, session)
-        payload.update({"success": True, "tracking_number": existing, "code_envoi": existing})
+        payload.update({"success": True, "ok": True, "tracking_number": existing, "code_envoi": existing})
         return payload
     if not _has_complete_confirm_details(order):
         raise HTTPException(status_code=400, detail="confirmation_details_required")
 
-    result = dispatch_order_from_stock(order_id, session)
-    if not result.get("ok"):
+    qty = int(body.quantity or 1)
+    if qty < 1:
+        qty = int(getattr(order, "tier_qty", 1) or 1) or 1
+    result = await create_quick_stock_order(order, body.product_id, qty)
+    if not result.get("success"):
         detail = str(result.get("error") or "quick_stock_failed")
         status_code = int(result.get("status_code") or 400)
-        if detail == "order_not_found":
-            status_code = 404
         return JSONResponse(
             status_code=status_code if status_code >= 400 else 400,
             content=jsonable_encoder(
                 {
                     "success": False,
+                    "ok": False,
                     "origin": "quick_livraison",
                     "detail": detail,
                     "message": detail,
                     "raw": result.get("raw"),
-                    "quick_product_id": result.get("quick_product_id"),
-                    "quantity": result.get("quantity"),
+                    "quick_product_id": result.get("quick_product_id") or body.product_id,
+                    "quantity": result.get("quantity") or qty,
                 }
             ),
         )
@@ -1427,20 +1435,25 @@ def admin_dispatch_quick_stock(
             status_code=400,
             content={
                 "success": False,
+                "ok": False,
                 "origin": "quick_livraison",
                 "detail": "quick_stock_no_tracking",
                 "message": "Quick Livraison لم تُرجع كود التتبع.",
             },
         )
+    ticket = str(result.get("ticket_url") or "").strip() or None
+    _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison")
     session.refresh(order)
     payload = _serialize_order(order, session)
     payload.update(
         {
+            "ok": True,
             "success": True,
             "tracking_number": tracking,
             "code_envoi": tracking,
-            "quick_product_id": result.get("quick_product_id"),
-            "quantity": result.get("quantity"),
+            "message": result.get("message") or "Colis ajouté avec succès.",
+            "quick_product_id": result.get("quick_product_id") or body.product_id,
+            "quantity": result.get("quantity") or qty,
         }
     )
     return payload
