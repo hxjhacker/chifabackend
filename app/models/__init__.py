@@ -97,6 +97,24 @@ class CityTarif(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class DeliveryCity(SQLModel, table=True):
+    __tablename__ = "delivery_cities"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    city_key: str = Field(index=True, unique=True, max_length=180)
+    city_name: str = Field(index=True, max_length=160)
+    city_name_ar: str = Field(default="", max_length=160)
+    search_blob: str = Field(default="", max_length=400, index=True)
+    delivery_delay: str | None = Field(default=None, max_length=40)
+    quick_delivery_price: float = 0.0
+    quick_retour_price: float = 0.0
+    quick_refus_price: float = 0.0
+    competitor_name: str = Field(default="ناقل بديل", max_length=80)
+    competitor_delivery_price: float | None = Field(default=None)
+    competitor_retour_price: float = 15.0
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class OrderItem(SQLModel, table=True):
     __tablename__ = "order_items"
 

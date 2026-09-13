@@ -16,9 +16,10 @@ from app.api.products import router as products_router
 from app.api.tracking import router as tracking_router
 from app.routers.admin import router as admin_router
 from app.routers.admin_products import router as admin_products_router
+from app.routers.admin_pricing import router as admin_pricing_router
 from app.config import settings
 from app.db import engine, ensure_order_columns
-from app.models import CityTarif, Order, OrderItem, Product, TrackingEvent, PageView, PushSubscription  # noqa: F401
+from app.models import CityTarif, DeliveryCity, Order, OrderItem, Product, TrackingEvent, PageView, PushSubscription  # noqa: F401
 from app.seed import seed_products
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -32,6 +33,13 @@ async def lifespan(_: FastAPI):
     with Session(engine) as session:
         result = seed_products(session)
         print(f"[CATALOG] seeded {result}", flush=True)
+        try:
+            from app.services.quick_pricing import seed_quick_cities
+
+            pricing = seed_quick_cities(session)
+            print(f"[QUICK_PRICING] seeded {pricing}", flush=True)
+        except Exception:
+            traceback.print_exc()
     scheduler = BackgroundScheduler()
     try:
         from app.services.tracking_sync import run_scheduled_tracking_sync
@@ -117,6 +125,7 @@ app.include_router(orders_router)
 app.include_router(tracking_router)
 app.include_router(admin_router)
 app.include_router(admin_products_router)
+app.include_router(admin_pricing_router)
 
 
 @app.get("/")

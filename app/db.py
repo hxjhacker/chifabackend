@@ -103,6 +103,29 @@ CITY_TARIFS_SQL = (
     "CREATE INDEX IF NOT EXISTS ix_city_tarifs_quick_district_id ON city_tarifs (quick_district_id)",
 )
 
+DELIVERY_CITIES_SQL = (
+    """
+    CREATE TABLE IF NOT EXISTS delivery_cities (
+      id uuid PRIMARY KEY,
+      city_key varchar(180) NOT NULL,
+      city_name varchar(160) NOT NULL,
+      city_name_ar varchar(160) NOT NULL DEFAULT '',
+      search_blob varchar(400) NOT NULL DEFAULT '',
+      delivery_delay varchar(40),
+      quick_delivery_price double precision NOT NULL DEFAULT 0,
+      quick_retour_price double precision NOT NULL DEFAULT 0,
+      quick_refus_price double precision NOT NULL DEFAULT 0,
+      competitor_name varchar(80) NOT NULL DEFAULT 'ناقل بديل',
+      competitor_delivery_price double precision,
+      competitor_retour_price double precision NOT NULL DEFAULT 15,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_delivery_cities_city_key ON delivery_cities (city_key)",
+    "CREATE INDEX IF NOT EXISTS ix_delivery_cities_city_name ON delivery_cities (city_name)",
+    "CREATE INDEX IF NOT EXISTS ix_delivery_cities_search_blob ON delivery_cities (search_blob)",
+)
+
 PRODUCTS_SQL = (
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS code varchar(64)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS default_price_cents integer DEFAULT 0 NOT NULL",
@@ -146,6 +169,8 @@ def ensure_order_columns() -> None:
         for sql in CITY_TARIFS_SQL:
             _exec_isolated(conn, sql)
         for sql in PRODUCTS_SQL:
+            _exec_isolated(conn, sql)
+        for sql in DELIVERY_CITIES_SQL:
             _exec_isolated(conn, sql)
 
 

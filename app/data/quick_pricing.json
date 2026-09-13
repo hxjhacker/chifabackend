@@ -1,0 +1,2828 @@
+{
+  "source": "https://quicklivraison.ma/pricing",
+  "api": "https://quicklivraison.ma/getDeliveryDataPricing",
+  "scraped_at": "2026-09-13T11:31:38.201Z",
+  "count": 564,
+  "cities": [
+    {
+      "city": "CASABLANCA",
+      "delivery_price_mad": 20,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Lahraouiyine",
+      "delivery_price_mad": 25,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Ain Harouda",
+      "delivery_price_mad": 30,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "ERRAHMA VILLE",
+      "delivery_price_mad": 30,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "TIT MELLIL",
+      "delivery_price_mad": 30,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "AGADIR",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "AGADIR-dakhla",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "AGADIR-salam",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "AIT MELLOUL",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "BOUSKOURA",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "DAR BOUAZZA",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "DAROUA",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "El Jadida",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Fes",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "INZEGANE",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "KENITRA",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "MARRAKECH",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "MKANSA-MEDIOUNA",
+      "delivery_price_mad": 35,
+      "delivery_delay": null
+    },
+    {
+      "city": "Mohammedia",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Nouaceur",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "RABAT",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "SALE",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Sale El Jadida",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "TAMARIS",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "TANGER",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "TEMARA",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "TETOUAN",
+      "delivery_price_mad": 35,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Addis",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ait Ayach",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "ait baha",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Ait Imour",
+      "delivery_price_mad": 39,
+      "delivery_delay": null
+    },
+    {
+      "city": "akka",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "amssa",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Aquermoud",
+      "delivery_price_mad": 39,
+      "delivery_delay": null
+    },
+    {
+      "city": "arbat",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "ASSNI",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "belksiri",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "bellaaguid",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "beni assem",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "beni oual",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "bouderoua",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "brakt radii",
+      "delivery_price_mad": 39,
+      "delivery_delay": null
+    },
+    {
+      "city": "brouj",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "chaouia",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "elhanchan",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "elouidane",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "elqods",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Golmima",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "gu",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Had M\\'sila",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "hed kawarit",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Hoci",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "imzfourn",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "jaadar",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "kelaat mgouna.",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "khmis",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "kntr",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "laaounate",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Lakssabi",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "lhaj kaDOUR",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "LMAAYA",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "mouzar",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "OULAD JIRAR",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "saada",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "sd ksm",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "sd slmn",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sebt gzoula",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sid L\\'Mokhtar",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sidi el aidi-settat",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "sidi taibii",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "sidi zouine",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "Skhour Rhamna",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "skoura.",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "souk elhed",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "ta",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tafetachte",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "tala youssef",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "Tamallalt",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "taz",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tighremt",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "TIMDLINE",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "timnsourt",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "tnir",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "tnt",
+      "delivery_price_mad": 39,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "ANZA",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "AZRO-AGADIR",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "AZROU",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "BENI MELLAL",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "BENSLIMANE",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Berrchid",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "BOUZNIKA",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Chellalat",
+      "delivery_price_mad": 40,
+      "delivery_delay": null
+    },
+    {
+      "city": "douar",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "el azzouzia",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "EL HALHAL MEDIOUNA",
+      "delivery_price_mad": 40,
+      "delivery_delay": null
+    },
+    {
+      "city": "el jorf agadir",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Haut Anza",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Jamaa Fdalate",
+      "delivery_price_mad": 40,
+      "delivery_delay": null
+    },
+    {
+      "city": "khoribga",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Laarjate",
+      "delivery_price_mad": 40,
+      "delivery_delay": null
+    },
+    {
+      "city": "LARACHE",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "lkhyayta-had soualem",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Mansouriah-Mouhmedia",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "MARTIL",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Mediouna",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Meknes",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "moulay abdellah",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Safi",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Settat",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "sidi kacem",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "sidi moussa -Agadir",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sidi Rahhal",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "TAROUDANTE",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "TIZNIT",
+      "delivery_price_mad": 40,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "afourrar",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "agedz",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Aghroud",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Aglou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "agouim",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Agouray",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Agourray",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Aguelmous",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "AHFIR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Ain aicha - Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ain Allah-Fes",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ain Aouda",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "AIN ATTIQ",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Ain baida-Tanger",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "AIN BENI MATHAR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Ain Bita-sefrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ain Cheggag",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ain Chkef",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ain difali",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Ain Dorij",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Ain Jemaa-meknes",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Ain jiri-Meknes",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ain Kansara-Fes",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ain karma-Meknes",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "ain leuh",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Ain mediouna - Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ain Sfa-oujda",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "ain taoujtat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "AINLLAH",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "AIT ALI",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "Ait ali-Azrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "AIT AMIRA-AGADIR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ait aourir-Marrakech",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Ait Baha",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Ait belkacem",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ait Ben Haddou-Ouarzazate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "ait ben hadou",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "ait hichem azghar",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "ait iaaza",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "ait kamra",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "ait oumghar",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ait Yaazem",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ait yahya oalla",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "ajdir (Hoceima)",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "ajdir (TAZA)",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Akhfennirr",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "aklim",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Aknoul",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Al Hoceima",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Alnif",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Amerzgane-Ouarzazate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Amizmiz",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Aoufous",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "aoulouz",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Aourir-Agadir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Arbaa Sahel",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "arbaoua",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "arkmane",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "ASILAH",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Assni-Marrakech",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Attaouia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "AZEMMOUR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Azilal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "azla",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Azzaba-Sefrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Bab Berred",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Bab Marzouka",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Bab Marzouka-Taza",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "bab taza",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Bejaad",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Belfaa",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "belyounech",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "BEN GUERIR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Ben karich-tetouan",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ben Tayeb NADOR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Benhmed-Berrchid",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "BENI AHMED CHEFCHAOUEN",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Beni Chiker",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Beni Ensar",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Beni Oulid",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "BENI TAJJITE",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Bensergao-agadir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "BERKAN",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Bhalil-sefrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Bin El Ouidane",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Biougra",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Bir Jdid",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Bir Tam Tam",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Birkwate-Essaouira",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Bni Bouayach",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Bni Drar",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "bni wkil",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "Bni Yakhlef-Mouhmmedia",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "bodnib",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Bolman",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "BOUANANE",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Bouarfa",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "bouarg",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "bouderbala",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "boudinar",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "boudnib",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "BOUFKRANE",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "BOUHLOU",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Bouhouda - Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "BOUIZAKARN",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Boujdour",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Boujniba",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "boukidan",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "BOUKNADEL",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Boumaln dads - tinghir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Boumia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Bradia- Beni-Mellal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "brikcha",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Cabo Negro",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "caffemor",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "CAP DE L EAU SAAIDIA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Chefchaouen",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "CHERIFIA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Chichaoua",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Chouiter",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Dakhla",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "dalia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Dar Chafai",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "DAR EL GADARI",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "DAR EL GADARI",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "DAR EL KEBDANI",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "dargom",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "DCHEIRA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Demnate",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "demnatee",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Dkhissa-meknes",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Dlalha",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "douar lhna",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "douar tamassint",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Douiyat-Fes",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Drarga",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Driouch-NADOR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Echemmaia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "El Baraka-Meknes",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "El Borouj-settat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "El Gara-Berrchid",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "el haouzia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "El jorf errachidia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "El Ksiba - Beni-Mellal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "El menzel-Sefrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "El Ouatia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "elafaq",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "ElHajeb",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "ElKelaâ des Sraghna",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Erfoud",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "ERRACHIDIA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Essaouira",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Essemara",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "FARYATA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "ferkhana-nador",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Figuig",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Fnideq",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "FOUARAT",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Foum El ancer - Beni mellal",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "FOUM JEMAA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Fquih Ben Salah",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Fricha-Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Galaz-Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "ghmat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "ghorba jedida",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Goulmima",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "GUELMIM",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Guercif",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Guigou",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Guisser",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "GZNAYA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Had kourt-Sidi kacem",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "had soualem",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Hadd Ouled Jelloul",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "hadharara",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Haj kaddour",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "HARHOURA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "HARMOMO",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "hay sina3i jadida",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Hay sinaai - El Jadida",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "hed oulad frej",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "HED OULAD ZBAIR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Houara",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Idelsane",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "IFRANE",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "ighram laalam-beni mellal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "ihadaden",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "Imi Mqourn",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Imi Ouaddar-agadir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "imintanoute",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "IMLIL",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "Imouzzer Marmoucha",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Imzouren",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "inchadn",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "ISSAGUEN",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "izamron",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "JAADAR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Jamaa Houderrane",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Jamaat shaim",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "jebha",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "JERADA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Jorf El Melha-OUZZANE",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Jorf Sefar",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "KAMOUNI",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Kantra El Ascar",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Kariat Ba Mohamed",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "KASBA TADLA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "KASITA",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Kassita-Deriouch",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "kefifat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "keliaa",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "keliaa",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Khemis Sahel",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "khemis zemamra",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Khemisset",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "khenichet",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "khenifra",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Khlalfa-Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ksar El Kebir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ksar Sghir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "laagarb",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "LAARJAT",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "LAAROUI",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "LAAYOUNE",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "LAAYOUNE-CHERQIA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "LAAYOUNE-MARSSA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "LAAYOUNE-PLAYA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "lahbichat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Lakhsass",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Lalla Mimouna",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Laouamra",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Lbour",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "LGWASSEM",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Lmhaya-Meknes",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Loudaya",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Maaziz",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "madagh",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "MADIEQ",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "MaJatte-Meknes",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Maqrissat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "marzouga -midelt",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Massa - Agadir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "massmoud",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "MAZAGAN",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Mechra Bel Ksiri",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "MEHDIA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Mejjat-chichaoua",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Mernissa-Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "MERRIRET",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Midar-Driouch",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Midelt",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Mirleft",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Missour",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "moulay bousselham",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "MOULAY BRAHIM",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Moulay driss zerhoune",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Moulay idriss",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "Moulay Yaacoub",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Mouzzar kander",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Msawar Raso",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "NADOR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Ouahat Sidi Brahim",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Oualidia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ouaouizeght - Azilal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Ouarzazate",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Ouazzane",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Oued Amlil",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Oued Jdida",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Oued Laou",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "OUED ZEM",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ougmas-Ifrane",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ouislane",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "OUJDA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Oulad Abbou-Berrchid",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Oulad abou",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Oulad Ayad",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Oulad Berhil",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "OULAD IICHE",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Oulad jerrar-Tiznit",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Oulad M barek-Beni Mellal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Oulad Said-settat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Oulad Tayeb-fes",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Oulad Teima",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "oulad yahya-ben guerir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "OULAD YOUSSEF",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Oulad Zmam - Beni-Mellal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ouled Daoud - Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ouled Moussa-Beni Mellal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Oulmes",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Ounagha",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "ourika",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Ourtzagh - Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Outat lhaj",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Ras al Ain-settat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ras El Ma-FES",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Ras Tabouda",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "ribat l khair",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Rich",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Rissani",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "ROMMANI",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Saaidia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Sahel Boutaher - Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Sbaa Ayoune",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Sebt El Guerdane",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "SEBT GZOULA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sebt mtiwa",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "sefrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Segangan",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "selouane",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Senhaja - Sefrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Sidi Abdallah Ghiat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sidi abed - El jadida",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "SIDI ABED -ELJADIDA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Sidi Addi-Azrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "sidi alal behraoui",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sidi Allal Tazi",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Sidi Bennour",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Sidi Bibi",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Sidi Bou Othmane",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Sidi boulfdail",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Sidi Bouzid-EL JADIDA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Sidi Hajjaj-Berrchid",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "sidi hajjaj-casa",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Sidi Harazem",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sidi Ifni",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Sidi Jaber-Beni-Mellal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "SIDI MOUSSA - MARRAKECH",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "sidi redouane",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "SIDI SLIMAN",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "SIDI TAIBI",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sidi Yahya Gharb",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "SIDI YAHYA ZAAIR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Skhinate-fes",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "SKHIRAT",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Skhour Rehamna",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Smimou - Essaouira",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "souihla",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Souihla",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "souiria",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Souk el Gour",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Souk el Had des Oulad-Zbair",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Souk Elarbaa Du Gharb",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Souk hed oulad jelloul",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Souk Sebt Oulad Nemma",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Stehat-Chefchaouen",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Taddart - Taza",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "taddart guercif",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "TAFOUGHALT",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tafraoute",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "tagadirt",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "TAGHAZOUT",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "TAGOUNIT",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "TAGZUIRT",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tahanaout",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Tahla",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Taliouine",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "TALSINT",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tamait Izder",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tamanar-Essaouira",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Tamansourt-Marrakech",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tamellalt",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "tamensourt-marrakech",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "tamenssourte",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tameslohte",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "TAMESNA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Tamraght-Agadir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tanante - Azilal",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tandout imghrane",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tantan",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "TAOUIMA-NADOR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Taoujtat",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1,J+2"
+    },
+    {
+      "city": "taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Taourirt",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Tarfaya",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Targuist",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Taroual",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Tarrast",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tassoultant",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Taza",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Temsia-agadir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tendrara",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Teroual - Ouazzane",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Thar Es-Souk",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tiddas-Khemisset",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tiflet",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Tighassaline",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "tiglft",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tigma Nbouber",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tikiouine",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Timahdi",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tindite",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tinejdad",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tinghir",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "Tissa - Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tizi Ouasli",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Tiztotin-NADOR",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Tlat Boukadra",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Tlat Oulad-Khoribga",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tnine Chtouka el jadida",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "TOUIMA",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2,J+3"
+    },
+    {
+      "city": "Tounfiet",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Wanana",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Youssoufia",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "YOUSSOUFIA RABAT",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "zag",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Zagora",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Zaida",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Zaio",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J/J+1"
+    },
+    {
+      "city": "ZAOUIA",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Zaouiat Bougrine - Sefrou",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Zaouiat Cheikh",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Zaouit Sidi Smail",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Zidouh",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "zoumi",
+      "delivery_price_mad": 45,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Zrizer-Taounate",
+      "delivery_price_mad": 45,
+      "delivery_delay": null
+    },
+    {
+      "city": "Agdz",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Aghmat",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Akhfennir",
+      "delivery_price_mad": 50,
+      "delivery_delay": null
+    },
+    {
+      "city": "Akka",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Akka ighan - Tata",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Anzi-Tiznit",
+      "delivery_price_mad": 50,
+      "delivery_delay": null
+    },
+    {
+      "city": "ASSAZAG",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "El ghazoua",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "El hanchan",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Foum Lahcen",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Foum Zguid",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Ghafsai",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Idaousmlal",
+      "delivery_price_mad": 50,
+      "delivery_delay": null
+    },
+    {
+      "city": "Ighrem",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Issafen-tata",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Kelaat Mgouna",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Lala takerkoust",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Mzouda",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Nzalat Laadam",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "oued  maleh - ouarzazate",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Oulad Ghanem-El jadida",
+      "delivery_price_mad": 50,
+      "delivery_delay": null
+    },
+    {
+      "city": "OUZOUD AZILAL",
+      "delivery_price_mad": 50,
+      "delivery_delay": null
+    },
+    {
+      "city": "Sebt Ben Sassi",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Sid L Mokhtar",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Sidi rehal - kelaa des sraghna",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Skoura",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1/J+2"
+    },
+    {
+      "city": "Tafetachte-chichaoua",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2"
+    },
+    {
+      "city": "Tagmout",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Tamanart - Tata",
+      "delivery_price_mad": 50,
+      "delivery_delay": null
+    },
+    {
+      "city": "TATA",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+3"
+    },
+    {
+      "city": "Tazarin",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2/J+3"
+    },
+    {
+      "city": "Taznakht",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Taznakht.",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+1"
+    },
+    {
+      "city": "Timahdite",
+      "delivery_price_mad": 50,
+      "delivery_delay": null
+    },
+    {
+      "city": "Tissint-Tata",
+      "delivery_price_mad": 50,
+      "delivery_delay": "J+2/J+3"
+    }
+  ]
+}
