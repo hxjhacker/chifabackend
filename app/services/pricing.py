@@ -3,8 +3,15 @@ EDUCATIVE_TIER_PRICE_CENTS = {1: 14900, 2: 24900, 3: 32900}
 CROSS_SELL_CENTS = 19900
 UPSELL_CENTS = 9900
 CURRENCY = "MAD"
-CORE_PRODUCT_SLUGS = ("quran", "kids", "music")
-PRODUCT_SLUGS = (*CORE_PRODUCT_SLUGS, "educative")
+CORE_PRODUCT_SLUGS = ("quran", "taalim", "music")
+QUICK_STOCK_SLUGS = ("zit_alfasokh", "alkhatm_alrijali", "almisk_alabyad")
+LEGACY_PRODUCT_SLUGS = {"kids": "taalim", "educative": "taalim"}
+PRODUCT_SLUGS = (*CORE_PRODUCT_SLUGS, *QUICK_STOCK_SLUGS, *LEGACY_PRODUCT_SLUGS)
+
+
+def canonical_product_slug(slug: str) -> str:
+    token = str(slug or "").strip()
+    return LEGACY_PRODUCT_SLUGS.get(token, token)
 
 
 def cents_to_mad(cents: int) -> float:
@@ -12,7 +19,7 @@ def cents_to_mad(cents: int) -> float:
 
 
 def tier_prices_for(product_slug: str) -> dict[int, int]:
-    if product_slug == "educative":
+    if product_slug in LEGACY_PRODUCT_SLUGS:
         return EDUCATIVE_TIER_PRICE_CENTS
     return TIER_PRICE_CENTS
 
@@ -31,15 +38,5 @@ def compute_subtotal(
 
 
 def upsell_candidates(product_slug: str | None, cross_sell_slug: str | None) -> list[str]:
-    bought = {product_slug, cross_sell_slug}
-    if "educative" in bought:
-        bought.add("kids")
+    bought = {canonical_product_slug(product_slug or ""), canonical_product_slug(cross_sell_slug or "")}
     return [slug for slug in CORE_PRODUCT_SLUGS if slug not in bought]
-
-
-TIER_PRICE_CENTS = TIER_PRICE_CENTS
-CROSS_SELL_CENTS = CROSS_SELL_CENTS
-UPSELL_CENTS = UPSELL_CENTS
-PRODUCT_SLUGS = PRODUCT_SLUGS
-cents_to_mad = cents_to_mad
-compute_subtotal = compute_subtotal

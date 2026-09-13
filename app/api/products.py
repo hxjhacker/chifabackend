@@ -15,6 +15,9 @@ def _dump(product: Product) -> dict:
         "tagline_ar": product.tagline_ar,
         "description_ar": product.description_ar,
         "accent": product.accent,
+        "category": getattr(product, "category", "standard"),
+        "is_quick_stock": bool(getattr(product, "is_quick_stock", False)),
+        "code": getattr(product, "code", None),
     }
 
 

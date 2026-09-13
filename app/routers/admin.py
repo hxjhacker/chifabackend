@@ -18,8 +18,8 @@ from sqlmodel import Session, col, select
 from app.db import engine, get_session
 from app.dependencies import client_ip, get_current_admin
 from app.models import Order, Product
-from app.services.catalog import clean_product_code, resolve_order_slug
-from app.services.quick_livraison import QUICK_STOCK_PRODUCT_KH01, create_quick_stock_order
+from app.services.catalog import clean_product_code, find_product, resolve_order_slug
+from app.services.quick_livraison import create_quick_stock_order
 from app.rate_limit import login_limiter
 from app.security import (
     admin_configured,
@@ -59,11 +59,15 @@ STATUS_TRANSITIONS: dict[str, tuple[str, ...]] = {
 REGION_IDS = tuple(f"MA{i:02d}" for i in range(1, 13))
 
 PACK_NAMES = {
-    "quran": "USB Ø§Ù„Ù‚Ø±Ø¢Ù† Ø§Ù„ÙƒØ±ÙŠÙ…",
-    "kids": "USB ØªØ¹Ù„ÙŠÙ… Ø§Ù„Ø£Ø·ÙØ§Ù„",
-    "music": "USB Ø§Ù„Ø£ØºØ§Ù†ÙŠ ÙˆØ§Ù„Ù…ÙˆØ³ÙŠÙ‚Ù‰",
-    "educative": "Ø§Ù„ÙÙ„Ø§Ø´Ø© Ø§Ù„ØªØ¹Ù„ÙŠÙ…ÙŠØ© Ø§Ù„Ø°ÙƒÙŠØ©",
-    "extra": "Ù…ÙØªØ§Ø­ Ø¥Ø¶Ø§ÙÙŠ Ø¨Ø³Ø¹Ø± Ø§Ù„Ø¹Ø±Ø¶",
+    "quran": "USB القرآن",
+    "taalim": "USB التعليمي",
+    "music": "USB الموسيقى",
+    "zit_alfasokh": "زيت الفسوخ",
+    "alkhatm_alrijali": "الخاتم الرجالي",
+    "almisk_alabyad": "المسك الأبيض",
+    "kids": "USB تعليم الأطفال",
+    "educative": "الفلاشة التعليمية الذكية",
+    "extra": "مفتاح إضافي بسعر العرض",
 }
 
 
@@ -81,7 +85,7 @@ class BulkOrderIds(BaseModel):
 
 
 class QuickStockDispatchRequest(BaseModel):
-    product_id: int = Field(default=QUICK_STOCK_PRODUCT_KH01, ge=1)
+    product_id: int | None = Field(default=None, ge=1)
     quantity: int = Field(default=1, ge=1)
 
 
@@ -137,11 +141,14 @@ def _product_code_map(session: Session | None) -> dict[str, str]:
         return cached
     try:
         for product in session.exec(select(Product)).all():
-            code = str(getattr(product, "code", None) or product.slug or "").strip().upper()
+            code = str(getattr(product, "code", None) or product.slug or "").strip()
+            if code and "/" not in code:
+                code = code.upper()
             if not code:
                 continue
             mapping[product.slug] = code
             mapping[code] = code
+            mapping[code.upper()] = code
             mapping[str(product.id)] = code
         setattr(session, "_product_code_cache", mapping)
     except Exception:
@@ -188,6 +195,36 @@ def _order_quick_product_id(order: Order, session: Session | None = None) -> int
     slug = str(getattr(order, "product_slug", "") or "").strip()
     mapped = _quick_product_id_map(session)
     return mapped.get(slug) or mapped.get(slug.upper()) or mapped.get(clean_product_code(slug))
+
+
+def _quick_stock_map(session: Session | None) -> dict[str, bool]:
+    mapping: dict[str, bool] = {}
+    if session is None:
+        return mapping
+    cached = getattr(session, "_quick_stock_cache", None)
+    if isinstance(cached, dict):
+        return cached
+    try:
+        for product in session.exec(select(Product)).all():
+            flag = bool(getattr(product, "is_quick_stock", False))
+            mapping[product.slug] = flag
+            code = str(getattr(product, "code", None) or "").strip()
+            if code:
+                mapping[code] = flag
+                mapping[code.upper()] = flag
+            mapping[str(product.id)] = flag
+        setattr(session, "_quick_stock_cache", mapping)
+    except Exception:
+        mapping = {}
+    return mapping
+
+
+def _order_is_quick_stock(order: Order, session: Session | None = None) -> bool:
+    slug = str(getattr(order, "product_slug", "") or "").strip()
+    mapped = _quick_stock_map(session)
+    if slug in mapped:
+        return bool(mapped[slug])
+    return bool(mapped.get(slug.upper()) or mapped.get(clean_product_code(slug)))
 
 
 def _product_labels(session: Session | None) -> dict[str, str]:
@@ -291,6 +328,7 @@ def _serialize_order(order: Order, session: Session | None = None) -> dict:
         "dispatched_at": _iso(getattr(order, "dispatched_at", None)),
         "product_code": _order_product_code(order, session),
         "quick_product_id": _order_quick_product_id(order, session),
+        "is_quick_stock": _order_is_quick_stock(order, session),
         "tracking_number": getattr(order, "meta_livraison_code", None),
         "code_envoi": getattr(order, "meta_livraison_code", None),
     }
@@ -1407,10 +1445,25 @@ async def admin_dispatch_quick_stock(
     if not _has_complete_confirm_details(order):
         raise HTTPException(status_code=400, detail="confirmation_details_required")
 
+    product = find_product(session, str(getattr(order, "product_slug", "") or ""))
+    if not product or not bool(getattr(product, "is_quick_stock", False)):
+        raise HTTPException(status_code=400, detail="not_quick_stock")
+    try:
+        catalog_quick_id = int(getattr(product, "quick_product_id", None) or 0)
+    except (TypeError, ValueError):
+        catalog_quick_id = 0
+    try:
+        requested_id = int(body.product_id or 0)
+    except (TypeError, ValueError):
+        requested_id = 0
+    quick_id = requested_id if requested_id >= 1 else catalog_quick_id
+    if quick_id < 1:
+        raise HTTPException(status_code=400, detail="quick_product_id_missing")
+
     qty = int(body.quantity or 1)
     if qty < 1:
         qty = int(getattr(order, "tier_qty", 1) or 1) or 1
-    result = await create_quick_stock_order(order, body.product_id, qty)
+    result = await create_quick_stock_order(order, quick_id, qty)
     if not result.get("success"):
         detail = str(result.get("error") or "quick_stock_failed")
         status_code = int(result.get("status_code") or 400)
@@ -1424,7 +1477,7 @@ async def admin_dispatch_quick_stock(
                     "detail": detail,
                     "message": detail,
                     "raw": result.get("raw"),
-                    "quick_product_id": result.get("quick_product_id") or body.product_id,
+                    "quick_product_id": result.get("quick_product_id") or quick_id,
                     "quantity": result.get("quantity") or qty,
                 }
             ),
@@ -1442,6 +1495,8 @@ async def admin_dispatch_quick_stock(
             },
         )
     ticket = str(result.get("ticket_url") or "").strip() or None
+    product.stock_quantity = max(0, int(getattr(product, "stock_quantity", 0) or 0) - qty)
+    session.add(product)
     _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison")
     session.refresh(order)
     payload = _serialize_order(order, session)
@@ -1452,8 +1507,9 @@ async def admin_dispatch_quick_stock(
             "tracking_number": tracking,
             "code_envoi": tracking,
             "message": result.get("message") or "Colis ajouté avec succès.",
-            "quick_product_id": result.get("quick_product_id") or body.product_id,
+            "quick_product_id": result.get("quick_product_id") or quick_id,
             "quantity": result.get("quantity") or qty,
+            "stock_quantity": int(getattr(product, "stock_quantity", 0) or 0),
         }
     )
     return payload

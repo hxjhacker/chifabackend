@@ -114,6 +114,11 @@ PRODUCTS_SQL = (
     "ALTER TABLE products ALTER COLUMN code SET NOT NULL",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS quick_product_id integer",
     "CREATE INDEX IF NOT EXISTS ix_products_quick_product_id ON products (quick_product_id)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS category varchar(32) DEFAULT 'standard' NOT NULL",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_quick_stock boolean DEFAULT false NOT NULL",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_quantity integer DEFAULT 0 NOT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_products_category ON products (category)",
+    "CREATE INDEX IF NOT EXISTS ix_products_is_quick_stock ON products (is_quick_stock)",
 )
 
 

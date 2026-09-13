@@ -30,7 +30,8 @@ async def lifespan(_: FastAPI):
     SQLModel.metadata.create_all(engine)
     ensure_order_columns()
     with Session(engine) as session:
-        seed_products(session)
+        result = seed_products(session)
+        print(f"[CATALOG] seeded {result}", flush=True)
     scheduler = BackgroundScheduler()
     try:
         from app.services.tracking_sync import run_scheduled_tracking_sync

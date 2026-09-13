@@ -24,8 +24,12 @@ EMPTY_KEYS = {"", "YOUR_API_KEY_HERE", "YOUR_API_SECRET_HERE"}
 DEFAULT_BASE = "https://api.metalivraison.ma/colis-service"
 COLIS_PATH = "/api/v1/partner/colis"
 PACK_NAMES = {
-    "quran": "مصحف شيفا جلو",
-    "educative": "حصيرة تعليمية",
+    "quran": "USB القرآن",
+    "taalim": "USB التعليمي",
+    "music": "USB الموسيقى",
+    "zit_alfasokh": "زيت الفسوخ",
+    "alkhatm_alrijali": "الخاتم الرجالي",
+    "almisk_alabyad": "المسك الأبيض",
 }
 
 

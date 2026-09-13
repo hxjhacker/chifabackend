@@ -25,8 +25,12 @@ def _base_url() -> str:
 
 
 PACK_NAMES = {
-    "quran": "مصحف شيفا جلو",
-    "educative": "حصيرة تعليمية",
+    "quran": "USB القرآن",
+    "taalim": "USB التعليمي",
+    "music": "USB الموسيقى",
+    "zit_alfasokh": "زيت الفسوخ",
+    "alkhatm_alrijali": "الخاتم الرجالي",
+    "almisk_alabyad": "المسك الأبيض",
 }
 
 

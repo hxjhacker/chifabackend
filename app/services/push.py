@@ -8,9 +8,13 @@ from sqlmodel import Session
 from app.config import settings
 
 PACK_NAMES = {
-    "quran": "USB القرآن الكريم",
+    "quran": "USB القرآن",
+    "taalim": "USB التعليمي",
+    "music": "USB الموسيقى",
+    "zit_alfasokh": "زيت الفسوخ",
+    "alkhatm_alrijali": "الخاتم الرجالي",
+    "almisk_alabyad": "المسك الأبيض",
     "kids": "USB تعليم الأطفال",
-    "music": "USB الأغاني والموسيقى",
     "educative": "الفلاشة التعليمية الذكية",
 }
 

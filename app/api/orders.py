@@ -16,6 +16,7 @@ from app.services.pricing import (
     PRODUCT_SLUGS,
     TIER_PRICE_CENTS,
     UPSELL_CENTS,
+    canonical_product_slug,
     cents_to_mad,
     compute_subtotal,
 )
@@ -117,12 +118,14 @@ def create_order(
     if payload.product_slug not in PRODUCT_SLUGS:
         raise HTTPException(status_code=422, detail="invalid_product")
 
-    product = session.exec(select(Product).where(Product.slug == payload.product_slug)).first()
-    if not product:
+    product_slug = canonical_product_slug(payload.product_slug)
+    product = session.exec(select(Product).where(Product.slug == product_slug)).first()
+    if not product or not product.is_active:
         raise HTTPException(status_code=404, detail="product_not_found")
 
+    cross_slug = canonical_product_slug(payload.cross_sell_slug) if payload.cross_sell_slug else None
     if payload.cross_sell_slug:
-        if payload.cross_sell_slug == payload.product_slug or payload.cross_sell_slug not in PRODUCT_SLUGS:
+        if cross_slug == product_slug or payload.cross_sell_slug not in PRODUCT_SLUGS:
             raise HTTPException(status_code=422, detail="invalid_cross_sell")
 
     existing = session.exec(select(Order).where(Order.event_id == payload.event_id)).first()
@@ -133,16 +136,16 @@ def create_order(
     if ip_is_blocked(client_ip):
         raise HTTPException(status_code=403, detail="order_blocked")
 
-    tier_cents, cross_cents, subtotal = compute_subtotal(payload.tier_qty, bool(payload.cross_sell_slug))
+    tier_cents, cross_cents, subtotal = compute_subtotal(payload.tier_qty, bool(cross_slug), payload.product_slug)
     order = Order(
         full_name=payload.full_name.strip(),
         phone=e164,
         phone_national=to_national(e164),
         city=customer_city_raw,
-        product_slug=payload.product_slug,
+        product_slug=product_slug,
         tier_qty=payload.tier_qty,
         tier_price_cents=tier_cents,
-        cross_sell_slug=payload.cross_sell_slug,
+        cross_sell_slug=cross_slug,
         cross_sell_price_cents=cross_cents,
         subtotal_cents=subtotal,
         total_cents=subtotal,
@@ -162,18 +165,18 @@ def create_order(
     session.add(
         OrderItem(
             order_id=order.id,
-            product_slug=payload.product_slug,
+            product_slug=product_slug,
             role="primary",
             quantity=payload.tier_qty,
             unit_price_cents=unit,
             line_total_cents=tier_cents,
         )
     )
-    if payload.cross_sell_slug:
+    if cross_slug:
         session.add(
             OrderItem(
                 order_id=order.id,
-                product_slug=payload.cross_sell_slug,
+                product_slug=cross_slug,
                 role="cross_sell",
                 quantity=1,
                 unit_price_cents=CROSS_SELL_CENTS,
@@ -201,10 +204,11 @@ def add_upsell(
         return _serialize(order)
     if payload.product_slug not in PRODUCT_SLUGS:
         raise HTTPException(status_code=422, detail="invalid_product")
-    if payload.product_slug in {order.product_slug, order.cross_sell_slug}:
+    upsell_slug = canonical_product_slug(payload.product_slug)
+    if upsell_slug in {order.product_slug, order.cross_sell_slug}:
         raise HTTPException(status_code=422, detail="upsell_must_be_different")
 
-    order.upsell_slug = payload.product_slug
+    order.upsell_slug = upsell_slug
     order.upsell_price_cents = UPSELL_CENTS
     order.total_cents = order.subtotal_cents + UPSELL_CENTS
     order.status = "upsell_accepted"
@@ -212,7 +216,7 @@ def add_upsell(
     session.add(
         OrderItem(
             order_id=order.id,
-            product_slug=payload.product_slug,
+            product_slug=upsell_slug,
             role="upsell",
             quantity=1,
             unit_price_cents=UPSELL_CENTS,

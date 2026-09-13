@@ -20,6 +20,9 @@ class Product(SQLModel, table=True):
     accent: str = Field(max_length=32, default="gold")
     default_price_cents: int = Field(default=0)
     quick_product_id: int | None = Field(default=None, index=True)
+    category: str = Field(default="standard", max_length=32, index=True)
+    is_quick_stock: bool = Field(default=False, index=True)
+    stock_quantity: int = Field(default=0)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utcnow)
 

@@ -153,14 +153,14 @@ def _error_text(data: Any, fallback: str = "") -> str:
     return fallback or "quick_stock_failed"
 
 
-async def create_quick_stock_order(order: Any, product_id: int = 6005, quantity: int = 1) -> dict[str, Any]:
-    """Create a Quick Livraison parcel from warehouse stock (KH01 / 6005 by default)."""
+async def create_quick_stock_order(order: Any, product_id: int, quantity: int = 1) -> dict[str, Any]:
+    """Create a Quick Livraison parcel from warehouse stock for the given Quick product ID."""
     try:
-        product_id = int(product_id or QUICK_STOCK_PRODUCT_KH01)
+        product_id = int(product_id)
     except (TypeError, ValueError):
-        product_id = QUICK_STOCK_PRODUCT_KH01
+        return {"success": False, "ok": False, "error": "quick_product_id_missing", "status_code": 400}
     if product_id < 1:
-        product_id = QUICK_STOCK_PRODUCT_KH01
+        return {"success": False, "ok": False, "error": "quick_product_id_missing", "status_code": 400}
     try:
         quantity = int(quantity or 1)
     except (TypeError, ValueError):

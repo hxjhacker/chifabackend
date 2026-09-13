@@ -9,10 +9,24 @@ from sqlmodel import Session, select
 from app.models import Product
 
 _CODE_RE = re.compile(r"[^A-Z0-9_-]+")
+_QUICK_REF_RE = re.compile(r"[^A-Za-z0-9_/-]+")
+PROTECTED_SLUGS = {
+    "quran",
+    "taalim",
+    "music",
+    "zit_alfasokh",
+    "alkhatm_alrijali",
+    "almisk_alabyad",
+}
 
 
 def clean_product_code(raw: str) -> str:
-    text = _CODE_RE.sub("-", str(raw or "").strip().upper())
+    original = str(raw or "").strip()
+    if "/" in original:
+        text = _QUICK_REF_RE.sub("", original)
+        text = re.sub(r"/{2,}", "/", text).strip("/")
+        return text[:64]
+    text = _CODE_RE.sub("-", original.upper())
     text = re.sub(r"[-_]{2,}", "-", text).strip("-_")
     return text[:64]
 
@@ -39,7 +53,7 @@ def unique_code(session: Session, code: str, exclude_id=None) -> str:
 
 
 def unique_slug(session: Session, code: str, exclude_id=None) -> str:
-    base = clean_product_code(code).lower().replace("-", "_") or f"prd_{uuid4().hex[:6]}"
+    base = clean_product_code(code).lower().replace("-", "_").replace("/", "_") or f"prd_{uuid4().hex[:6]}"
     candidate = base[:64]
     n = 2
     while True:
@@ -54,6 +68,13 @@ def unique_slug(session: Session, code: str, exclude_id=None) -> str:
 
 def dump_product(product: Product) -> dict:
     cents = int(getattr(product, "default_price_cents", 0) or 0)
+    quick_id = getattr(product, "quick_product_id", None)
+    try:
+        quick_id = int(quick_id) if quick_id not in (None, "") else None
+    except (TypeError, ValueError):
+        quick_id = None
+    if quick_id is not None and quick_id < 1:
+        quick_id = None
     return {
         "id": str(product.id),
         "name": product.name_ar,
@@ -63,7 +84,10 @@ def dump_product(product: Product) -> dict:
         "slug": product.slug,
         "default_price": round(cents / 100, 2),
         "default_price_cents": cents,
-        "quick_product_id": getattr(product, "quick_product_id", None),
+        "quick_product_id": quick_id,
+        "category": getattr(product, "category", None) or ("quick_stock" if getattr(product, "is_quick_stock", False) else "standard"),
+        "is_quick_stock": bool(getattr(product, "is_quick_stock", False)),
+        "stock_quantity": int(getattr(product, "stock_quantity", 0) or 0),
         "is_active": bool(product.is_active),
         "created_at": product.created_at.isoformat() if product.created_at else None,
     }
@@ -74,16 +98,15 @@ def find_product(session: Session, raw: str) -> Product | None:
     if not token:
         return None
     code = clean_product_code(token)
-    return session.exec(
-        select(Product).where(
-            or_(
-                Product.slug == token,
-                Product.slug == token.lower(),
-                Product.code == code,
-                Product.code == token.upper(),
-            )
-        )
-    ).first()
+    clauses = [
+        Product.slug == token,
+        Product.slug == token.lower(),
+        Product.code == token,
+        Product.code == token.upper(),
+    ]
+    if code:
+        clauses.extend([Product.code == code, Product.code == code.upper(), Product.slug == code.lower().replace("/", "_")])
+    return session.exec(select(Product).where(or_(*clauses))).first()
 
 
 def resolve_order_slug(session: Session, raw: str) -> str:
@@ -91,7 +114,7 @@ def resolve_order_slug(session: Session, raw: str) -> str:
     if hit:
         return hit.slug
     code = clean_product_code(raw)
-    return code or "quran"
+    return code.lower().replace("/", "_") or "quran"
 
 
 def parse_quick_product_id(raw: object) -> int | None:
