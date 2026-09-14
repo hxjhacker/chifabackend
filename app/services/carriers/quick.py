@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 from typing import Any
 
 import httpx
@@ -13,12 +16,65 @@ from app.services.city_tarifs import city_match_keys, fold_city
 from app.services.meta_livraison_cities import resolve_meta_city
 from app.utils.regions import is_region_label
 
+log = logging.getLogger(__name__)
+
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE"}
 HUB_CITY_FOLDS = ("fes", "fez", "fas", "fès")
+QUICK_HTTP_TIMEOUT = 10.0
+_CITY_CACHE_TTL_SECONDS = 60 * 60
+_city_mapping_cache: dict[str, int] | None = None
+_city_mapping_cached_at = 0.0
+_city_mapping_lock: asyncio.Lock | None = None
 
 
 def _api_key() -> str:
     return (QUICK_LIVRAISON_API_KEY or "").strip()
+
+
+def _city_cache_lock() -> asyncio.Lock:
+    global _city_mapping_lock
+    if _city_mapping_lock is None:
+        _city_mapping_lock = asyncio.Lock()
+    return _city_mapping_lock
+
+
+def _cached_city_mapping_if_fresh() -> dict[str, int] | None:
+    if not _city_mapping_cache:
+        return None
+    if (time.monotonic() - _city_mapping_cached_at) >= _CITY_CACHE_TTL_SECONDS:
+        return None
+    return _city_mapping_cache
+
+
+def _store_city_mapping(mapping: dict[str, int]) -> None:
+    global _city_mapping_cache, _city_mapping_cached_at
+    if not mapping:
+        return
+    _city_mapping_cache = mapping
+    _city_mapping_cached_at = time.monotonic()
+    log.info("Cached %s Quick city ids", len(mapping))
+
+
+async def cached_city_mapping(*, force: bool = False) -> dict[str, int]:
+    """In-memory Quick getCityIDs map. Avoids a network round-trip on every dispatch."""
+    if not force:
+        fresh = _cached_city_mapping_if_fresh()
+        if fresh is not None:
+            return fresh
+    async with _city_cache_lock():
+        if not force:
+            fresh = _cached_city_mapping_if_fresh()
+            if fresh is not None:
+                return fresh
+        payload = await QuickLivraisonCarrier()._get("/getCityIDs")
+        mapping = _mapping_from_city_rows(_city_rows(payload))
+        if mapping:
+            _store_city_mapping(mapping)
+            return mapping
+        if _city_mapping_cache:
+            log.warning("Quick getCityIDs returned no cities; using stale cache of %s ids", len(_city_mapping_cache))
+            return _city_mapping_cache
+        return {}
 
 
 def _base_url() -> str:
@@ -381,7 +437,7 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
 
     async def _get(self, path: str) -> Any:
         url = f"{_base_url()}{path}"
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=QUICK_HTTP_TIMEOUT, follow_redirects=True) as client:
             res = await client.get(url, params=self._params(), headers=self._headers())
         try:
             return res.json()
@@ -391,7 +447,7 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
     async def _post(self, path: str, payload: dict[str, Any]) -> tuple[int, Any, str]:
         url = f"{_base_url()}{path}"
         body = {**payload, "api_key": _api_key()}
-        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=QUICK_HTTP_TIMEOUT, follow_redirects=True) as client:
             res = await client.post(url, params=self._params(), json=body, headers=self._headers())
         parsed = _parse_http_body(res)
         return res.status_code, parsed, res.text
@@ -401,7 +457,7 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         url = f"{_base_url()}/deliveries/store"
         body = {**payload, "api_key": _api_key()}
         accept = {"Accept": "application/json"}
-        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=QUICK_HTTP_TIMEOUT, follow_redirects=True) as client:
             res = await client.post(
                 url,
                 params=self._params(),
@@ -430,8 +486,7 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         stored = self._district_from_db(order)
         if stored:
             return stored
-        payload = await self._get("/getCityIDs")
-        mapping = _mapping_from_city_rows(_city_rows(payload))
+        mapping = await cached_city_mapping()
         names = _candidate_city_names(order)
         return _district_from_mapping(mapping, names) or _hub_district(mapping)
 
@@ -446,19 +501,16 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         return self._district_from_db(order, allow_hub=False)
 
     async def resolve_mapped_district_id(self, order: Any, session: Session | None = None) -> int | None:
-        found = self.mapped_district_id(order, session)
-        if found:
-            return found
-        payload = await self._get("/getCityIDs")
-        mapping = _mapping_from_city_rows(_city_rows(payload))
-        return _district_from_mapping(mapping, _candidate_city_names(order))
+        names = _candidate_city_names(order)
+        mapping = await cached_city_mapping()
+        return _district_from_mapping(mapping, names)
 
     async def _post_store_json(self, payload: dict[str, Any]) -> tuple[int, Any, str]:
         """Official Quick stock create: JSON body to POST /deliveries/store."""
         url = f"{_base_url()}/deliveries/store"
         body = {**payload, "api_key": _api_key()}
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=QUICK_HTTP_TIMEOUT, follow_redirects=True) as client:
             res = await client.post(url, json=body, headers=headers)
         return res.status_code, _parse_http_body(res), res.text
 
@@ -762,6 +814,9 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
             name = _city_name(row)
             if district_id and name:
                 rows.append({"district_id": district_id, "city_name": name})
+        mapping = _mapping_from_city_rows(_city_rows(payload))
+        if mapping:
+            _store_city_mapping(mapping)
         return rows
 
 

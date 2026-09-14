@@ -138,9 +138,11 @@ def _lookup_static_district(order: Any) -> int | None:
 
 
 async def _lookup_live_district(order: Any, session: Session | None = None) -> int | None:
-    from app.services.carriers.quick import QuickLivraisonCarrier
+    from app.services.carriers.quick import _candidate_city_names, _district_from_mapping, cached_city_mapping
 
-    return await QuickLivraisonCarrier().resolve_mapped_district_id(order, session)
+    _ = session
+    mapping = await cached_city_mapping()
+    return _district_from_mapping(mapping, _candidate_city_names(order))
 
 
 def clean_moroccan_phone(phone: str) -> str:
@@ -222,6 +224,7 @@ async def create_quick_stock_order(
     session: Session | None = None,
 ) -> dict[str, Any]:
     """Create a Quick Livraison parcel from warehouse stock for the given Quick product ID."""
+    _ = session
     try:
         product_id = int(product_id)
     except (TypeError, ValueError):
@@ -236,97 +239,149 @@ async def create_quick_stock_order(
         quantity = 1
 
     city_label = official_city_label(order)
-    candidates = official_city_candidates(order)
-    district_id = _lookup_static_district(order)
-    if not district_id:
-        try:
-            district_id = await _lookup_live_district(order, session)
-        except Exception as exc:
+    try:
+        candidates = official_city_candidates(order)
+        district_id = _lookup_static_district(order)
+        if not district_id:
+            try:
+                district_id = await _lookup_live_district(order)
+            except httpx.TimeoutException:
+                detail = "تعذر الاتصال بـ Quick Livraison (انتهت المهلة). حاول مرة أخرى."
+                log.warning("Quick getCityIDs timed out city=%r", city_label)
+                return {
+                    "success": False,
+                    "ok": False,
+                    "error": "quick_timeout",
+                    "detail": detail,
+                    "message": detail,
+                    "status_code": 400,
+                    "city": city_label,
+                }
+            except Exception as exc:
+                log.warning(
+                    "Quick city lookup failed; will not fall back to Casablanca. city=%r shipping_city=%r city_field=%r err=%s",
+                    city_label,
+                    getattr(order, "shipping_city", None),
+                    getattr(order, "city", None),
+                    exc,
+                )
+        if not district_id:
             log.warning(
-                "Quick city lookup failed; will not fall back to Casablanca. city=%r shipping_city=%r city_field=%r err=%s",
+                "Quick district not mapped; refusing silent Casablanca fallback. city=%r candidates=%r shipping_city=%r city_field=%r region_id=%r",
                 city_label,
+                candidates,
                 getattr(order, "shipping_city", None),
                 getattr(order, "city", None),
-                exc,
+                getattr(order, "region_id", None),
             )
-    if not district_id:
-        log.warning(
-            "Quick district not mapped; refusing silent Casablanca fallback. city=%r candidates=%r shipping_city=%r city_field=%r region_id=%r",
+            detail = unmapped_city_detail(city_label)
+            return {
+                "success": False,
+                "ok": False,
+                "error": "quick_district_not_mapped",
+                "detail": detail,
+                "message": detail,
+                "status_code": 400,
+                "city": city_label,
+                "candidates": candidates,
+            }
+        log.info(
+            "Quick stock dispatch city=%r district_id=%s candidates=%r",
             city_label,
+            district_id,
             candidates,
-            getattr(order, "shipping_city", None),
-            getattr(order, "city", None),
-            getattr(order, "region_id", None),
         )
+        phone = _phone(order)
+        payload = {
+            "api_key": _api_key(),
+            "district_id": district_id,
+            "name": _customer_name(order),
+            "amount": _cod_amount(order),
+            "phone": phone,
+            "address": _address(order),
+            "code": f"CFG-{str(getattr(order, 'id', ''))[:8]}",
+            "note": str(getattr(order, "courier_notes", "") or ""),
+            "open": False,
+            "received_quantity": {str(product_id): int(quantity)},
+        }
+
+        from app.services.carriers.quick import QUICK_HTTP_TIMEOUT
+
+        try:
+            async with httpx.AsyncClient(timeout=QUICK_HTTP_TIMEOUT, follow_redirects=True) as client:
+                res = await client.post(
+                    QUICK_STOCK_STORE_URL,
+                    json=payload,
+                    headers={"Accept": "application/json", "Content-Type": "application/json"},
+                )
+        except httpx.TimeoutException:
+            detail = "تعذر الاتصال بـ Quick Livraison (انتهت المهلة). حاول مرة أخرى."
+            return {
+                "success": False,
+                "ok": False,
+                "error": "quick_timeout",
+                "detail": detail,
+                "message": detail,
+                "status_code": 400,
+                "city": city_label,
+            }
+        except httpx.HTTPError as exc:
+            detail = str(exc) or "تعذر الاتصال بـ Quick Livraison."
+            return {
+                "success": False,
+                "ok": False,
+                "error": "quick_stock_failed",
+                "detail": detail,
+                "message": detail,
+                "status_code": 400,
+                "city": city_label,
+            }
+
+        try:
+            data = res.json()
+        except Exception:
+            data = {"text": res.text}
+
+        tracking = ""
+        if isinstance(data, dict):
+            tracking = str(data.get("tracking_number") or "").strip()
+
+        if res.status_code in (200, 201) and tracking:
+            return {
+                "success": True,
+                "ok": True,
+                "tracking_number": tracking,
+                "message": data.get("success", "Colis ajouté avec succès.") if isinstance(data, dict) else "Colis ajouté avec succès.",
+                "district_id": district_id,
+                "city": city_label,
+                "quick_product_id": product_id,
+                "quantity": quantity,
+                "raw": data,
+            }
+        fail_status = res.status_code if 400 <= res.status_code < 500 else 400
         return {
             "success": False,
             "ok": False,
-            "error": "quick_district_not_mapped",
-            "detail": unmapped_city_detail(city_label),
-            "message": unmapped_city_detail(city_label),
-            "status_code": 400,
-            "city": city_label,
-            "candidates": candidates,
-        }
-    log.info(
-        "Quick stock dispatch city=%r district_id=%s candidates=%r",
-        city_label,
-        district_id,
-        candidates,
-    )
-    phone = _phone(order)
-    payload = {
-        "api_key": _api_key(),
-        "district_id": district_id,
-        "name": _customer_name(order),
-        "amount": _cod_amount(order),
-        "phone": phone,
-        "address": _address(order),
-        "code": f"CFG-{str(getattr(order, 'id', ''))[:8]}",
-        "note": str(getattr(order, "courier_notes", "") or ""),
-        "open": False,
-        "received_quantity": {str(product_id): int(quantity)},
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            res = await client.post(
-                QUICK_STOCK_STORE_URL,
-                json=payload,
-                headers={"Accept": "application/json", "Content-Type": "application/json"},
-            )
-    except httpx.HTTPError as exc:
-        return {"success": False, "ok": False, "error": str(exc) or "quick_stock_failed", "status_code": 400, "city": city_label}
-
-    try:
-        data = res.json()
-    except Exception:
-        data = {"text": res.text}
-
-    tracking = ""
-    if isinstance(data, dict):
-        tracking = str(data.get("tracking_number") or "").strip()
-
-    if res.status_code in (200, 201) and tracking:
-        return {
-            "success": True,
-            "ok": True,
-            "tracking_number": tracking,
-            "message": data.get("success", "Colis ajouté avec succès.") if isinstance(data, dict) else "Colis ajouté avec succès.",
+            "error": _error_text(data, res.text),
+            "detail": _error_text(data, res.text),
+            "status_code": fail_status,
             "district_id": district_id,
             "city": city_label,
             "quick_product_id": product_id,
             "quantity": quantity,
             "raw": data,
         }
-    return {
-        "success": False,
-        "ok": False,
-        "error": _error_text(data, res.text),
-        "status_code": res.status_code,
-        "district_id": district_id,
-        "city": city_label,
-        "quick_product_id": product_id,
-        "quantity": quantity,
-        "raw": data,
-    }
+    except Exception as exc:
+        log.exception("Quick stock dispatch crashed city=%r", city_label)
+        detail = str(exc) or unmapped_city_detail(city_label)
+        if "timeout" in detail.casefold() or "timed out" in detail.casefold():
+            detail = "تعذر الاتصال بـ Quick Livraison (انتهت المهلة). حاول مرة أخرى."
+        return {
+            "success": False,
+            "ok": False,
+            "error": "quick_stock_failed",
+            "detail": detail,
+            "message": detail,
+            "status_code": 400,
+            "city": city_label,
+        }

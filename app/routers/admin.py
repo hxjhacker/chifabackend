@@ -4,6 +4,7 @@ import json
 import os
 import traceback
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -87,6 +88,36 @@ class BulkOrderIds(BaseModel):
 class QuickStockDispatchRequest(BaseModel):
     product_id: int | None = Field(default=None, ge=1)
     quantity: int = Field(default=1, ge=1)
+
+
+_QUICK_ORDER_SNAPSHOT_ATTRS = (
+    "id",
+    "full_name",
+    "customer_name",
+    "city",
+    "shipping_city",
+    "region_id",
+    "phone",
+    "phone_national",
+    "address",
+    "quartier",
+    "street",
+    "building",
+    "landmark",
+    "courier_notes",
+    "total_cents",
+    "total_price",
+    "price",
+    "total_mad",
+    "tier_qty",
+    "product_slug",
+    "status",
+    "meta_livraison_code",
+)
+
+
+def _snapshot_order(order: Order) -> SimpleNamespace:
+    return SimpleNamespace(**{name: getattr(order, name, None) for name in _QUICK_ORDER_SNAPSHOT_ATTRS})
 
 
 def _display_status(raw: str) -> str:
@@ -1421,16 +1452,8 @@ async def admin_send_livraison(order_id: str, request: Request):
         )
 
 
-@router.post("/orders/{order_id}/dispatch-quick-stock")
-async def admin_dispatch_quick_stock(
-    order_id: str,
-    body: QuickStockDispatchRequest = Body(default_factory=QuickStockDispatchRequest),
-    admin: dict = Depends(get_current_admin),
-    session: Session = Depends(get_session),
-):
-    _ = admin
-    city_label = ""
-    try:
+def _prepare_quick_stock_dispatch(order_id: str, body: QuickStockDispatchRequest) -> dict[str, Any] | JSONResponse:
+    with Session(engine) as session:
         order = _load_order(session, order_id)
         if not order:
             return JSONResponse(
@@ -1458,7 +1481,7 @@ async def admin_dispatch_quick_stock(
         if existing:
             payload = _serialize_order(order, session)
             payload.update({"success": True, "ok": True, "tracking_number": existing, "code_envoi": existing})
-            return payload
+            return JSONResponse(content=payload)
         if not _has_complete_confirm_details(order):
             return JSONResponse(
                 status_code=400,
@@ -1469,7 +1492,6 @@ async def admin_dispatch_quick_stock(
                     "message": "كمّل معلومات التوصيل قبل الشحن.",
                 },
             )
-
         product = find_product(session, str(getattr(order, "product_slug", "") or ""))
         if not product or not bool(getattr(product, "is_quick_stock", False)):
             return JSONResponse(
@@ -1495,11 +1517,72 @@ async def admin_dispatch_quick_stock(
                     "message": "أضف معرف المنتج في كويك من إدارة المنتجات قبل الإرسال من المخزون.",
                 },
             )
-
         qty = int(body.quantity or 1)
         if qty < 1:
             qty = int(getattr(order, "tier_qty", 1) or 1) or 1
-        result = await create_quick_stock_order(order, quick_id, qty, session=session)
+        return {
+            "order": _snapshot_order(order),
+            "order_id": str(order.id),
+            "product_slug": str(getattr(order, "product_slug", "") or ""),
+            "quick_id": quick_id,
+            "qty": qty,
+            "city_label": city_label,
+        }
+
+
+def _finalize_quick_stock_dispatch(
+    order_id: str,
+    product_slug: str,
+    tracking: str,
+    ticket: str | None,
+    qty: int,
+    result: dict[str, Any],
+) -> dict[str, Any] | JSONResponse:
+    with Session(engine) as session:
+        order = _load_order(session, order_id)
+        if not order:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "ok": False, "detail": "order_not_found", "message": "الطلبية غير موجودة."},
+            )
+        product = find_product(session, product_slug)
+        if product:
+            product.stock_quantity = max(0, int(getattr(product, "stock_quantity", 0) or 0) - qty)
+            session.add(product)
+        _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison")
+        session.refresh(order)
+        payload = _serialize_order(order, session)
+        payload.update(
+            {
+                "ok": True,
+                "success": True,
+                "tracking_number": tracking,
+                "code_envoi": tracking,
+                "message": result.get("message") or "Colis ajouté avec succès.",
+                "quick_product_id": result.get("quick_product_id"),
+                "quantity": result.get("quantity") or qty,
+                "stock_quantity": int(getattr(product, "stock_quantity", 0) or 0) if product else 0,
+            }
+        )
+        return payload
+
+
+@router.post("/orders/{order_id}/dispatch-quick-stock")
+async def admin_dispatch_quick_stock(
+    order_id: str,
+    body: QuickStockDispatchRequest = Body(default_factory=QuickStockDispatchRequest),
+    admin: dict = Depends(get_current_admin),
+):
+    _ = admin
+    city_label = ""
+    try:
+        prepared = _prepare_quick_stock_dispatch(order_id, body)
+        if isinstance(prepared, JSONResponse):
+            return prepared
+        city_label = str(prepared.get("city_label") or "")
+        quick_id = int(prepared["quick_id"])
+        qty = int(prepared["qty"])
+        result = await create_quick_stock_order(prepared["order"], quick_id, qty)
         if not result.get("success"):
             city_label = str(result.get("city") or city_label)
             error_code = str(result.get("error") or "")
@@ -1539,24 +1622,15 @@ async def admin_dispatch_quick_stock(
                 },
             )
         ticket = str(result.get("ticket_url") or "").strip() or None
-        product.stock_quantity = max(0, int(getattr(product, "stock_quantity", 0) or 0) - qty)
-        session.add(product)
-        _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison")
-        session.refresh(order)
-        payload = _serialize_order(order, session)
-        payload.update(
-            {
-                "ok": True,
-                "success": True,
-                "tracking_number": tracking,
-                "code_envoi": tracking,
-                "message": result.get("message") or "Colis ajouté avec succès.",
-                "quick_product_id": result.get("quick_product_id") or quick_id,
-                "quantity": result.get("quantity") or qty,
-                "stock_quantity": int(getattr(product, "stock_quantity", 0) or 0),
-            }
+        finalized = _finalize_quick_stock_dispatch(
+            str(prepared["order_id"]),
+            str(prepared["product_slug"]),
+            tracking,
+            ticket,
+            qty,
+            result,
         )
-        return payload
+        return finalized
     except HTTPException as exc:
         if exc.status_code < 500:
             return JSONResponse(
@@ -1564,11 +1638,14 @@ async def admin_dispatch_quick_stock(
                 content={"success": False, "ok": False, "detail": exc.detail, "message": str(exc.detail)},
             )
         print(f"[QUICK_STOCK_ERROR] {traceback.format_exc()}", flush=True)
-        detail = unmapped_city_detail(city_label)
+        detail = str(exc.detail) if exc.detail else unmapped_city_detail(city_label)
         return JSONResponse(status_code=400, content={"success": False, "ok": False, "detail": detail, "message": detail, "city": city_label})
-    except Exception:
+    except Exception as exc:
         print(f"[QUICK_STOCK_ERROR] {traceback.format_exc()}", flush=True)
-        detail = unmapped_city_detail(city_label)
+        detail = str(exc) or unmapped_city_detail(city_label)
+        folded = detail.casefold()
+        if "timeout" in folded or "timed out" in folded:
+            detail = "تعذر الاتصال بـ Quick Livraison (انتهت المهلة). حاول مرة أخرى."
         return JSONResponse(
             status_code=400,
             content={"success": False, "ok": False, "detail": detail, "message": detail, "city": city_label},
