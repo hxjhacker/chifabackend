@@ -1,20 +1,35 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 import httpx
+from sqlmodel import Session
 
 from app.core.config import QUICK_LIVRAISON_API_KEY
+from app.services.city_tarifs import fold_city
+from app.services.meta_livraison_cities import resolve_meta_city
+from app.utils.regions import is_region_label
+
+log = logging.getLogger(__name__)
 
 QUICK_STOCK_STORE_URL = "https://clients.quicklivraison.ma/api/deliveries/store"
 QUICK_STOCK_PRODUCT_KH01 = 6005
 QUICK_API_KEY_FALLBACK = "6sD6fVFImLf0SyE2pzBMdOuiNqUHEJyE"
+CASABLANCA_DISTRICT_ID = 43
+BIR_JDID_DISTRICT_ID = 674
 
 QUICK_CITIES = {
-    "casablanca": 43,
-    "casa": 43,
-    "الدار البيضاء": 43,
+    "casablanca": CASABLANCA_DISTRICT_ID,
+    "casa": CASABLANCA_DISTRICT_ID,
+    "الدار البيضاء": CASABLANCA_DISTRICT_ID,
+    "bir jdid": BIR_JDID_DISTRICT_ID,
+    "birjdid": BIR_JDID_DISTRICT_ID,
+    "ber jdid": BIR_JDID_DISTRICT_ID,
+    "berjdid": BIR_JDID_DISTRICT_ID,
+    "bir jedid": BIR_JDID_DISTRICT_ID,
+    "بير الجديد": BIR_JDID_DISTRICT_ID,
     "marrakech": 49,
     "مراكش": 49,
     "agadir": 37,
@@ -58,16 +73,65 @@ QUICK_CITIES = {
 }
 
 
+def _index_quick_cities(cities: dict[str, int]) -> dict[str, int]:
+    index: dict[str, int] = {}
+    for key, val in cities.items():
+        folded = fold_city(key)
+        if not folded:
+            continue
+        index[folded] = val
+        index[folded.replace(" ", "")] = val
+    return index
+
+
+_QUICK_CITY_INDEX = _index_quick_cities(QUICK_CITIES)
+
+
 def _api_key() -> str:
     return (QUICK_LIVRAISON_API_KEY or QUICK_API_KEY_FALLBACK).strip() or QUICK_API_KEY_FALLBACK
 
 
-def resolve_district_id(city_name: str) -> int:
-    clean = (city_name or "").strip().lower()
-    for key, val in QUICK_CITIES.items():
-        if key in clean:
-            return val
-    return 43
+def resolve_district_id(city_name: str) -> int | None:
+    """Exact folded match against known Quick city ids. Never substring, never a silent Casablanca fallback."""
+    if is_region_label(city_name):
+        return None
+    folded = fold_city(city_name)
+    if not folded:
+        return None
+    found = _QUICK_CITY_INDEX.get(folded) or _QUICK_CITY_INDEX.get(folded.replace(" ", ""))
+    if found:
+        return found
+    official = resolve_meta_city(city_name)
+    if official and official != city_name and not is_region_label(official):
+        official_fold = fold_city(official)
+        return _QUICK_CITY_INDEX.get(official_fold) or _QUICK_CITY_INDEX.get(official_fold.replace(" ", ""))
+    return None
+
+
+def official_city_candidates(order: Any) -> list[str]:
+    """Prefer the official selected city (`shipping_city`), then typed `city`. Skip region names."""
+    from app.services.carriers.quick import _candidate_city_names
+
+    return _candidate_city_names(order)
+
+
+def official_city_label(order: Any) -> str:
+    names = official_city_candidates(order)
+    return names[0] if names else ""
+
+
+def _lookup_static_district(order: Any) -> int | None:
+    for name in official_city_candidates(order):
+        found = resolve_district_id(name)
+        if found:
+            return found
+    return None
+
+
+async def _lookup_live_district(order: Any, session: Session | None = None) -> int | None:
+    from app.services.carriers.quick import QuickLivraisonCarrier
+
+    return await QuickLivraisonCarrier().resolve_mapped_district_id(order, session)
 
 
 def clean_moroccan_phone(phone: str) -> str:
@@ -77,17 +141,6 @@ def clean_moroccan_phone(phone: str) -> str:
     elif not digits.startswith("0") and len(digits) == 9:
         digits = "0" + digits
     return digits[-10:]
-
-
-def _city_text(order: Any) -> str:
-    return " ".join(
-        part
-        for part in (
-            str(getattr(order, "shipping_city", "") or "").strip(),
-            str(getattr(order, "city", "") or "").strip(),
-        )
-        if part
-    )
 
 
 def _customer_name(order: Any) -> str:
@@ -115,7 +168,7 @@ def _cod_amount(order: Any) -> float:
 
 def _address(order: Any) -> str:
     stored = str(getattr(order, "address", None) or "").strip()
-    city = str(getattr(order, "city", "") or "").strip()
+    city = official_city_label(order) or str(getattr(order, "city", "") or "").strip()
     if stored:
         return stored
     bits = [
@@ -153,7 +206,12 @@ def _error_text(data: Any, fallback: str = "") -> str:
     return fallback or "quick_stock_failed"
 
 
-async def create_quick_stock_order(order: Any, product_id: int, quantity: int = 1) -> dict[str, Any]:
+async def create_quick_stock_order(
+    order: Any,
+    product_id: int,
+    quantity: int = 1,
+    session: Session | None = None,
+) -> dict[str, Any]:
     """Create a Quick Livraison parcel from warehouse stock for the given Quick product ID."""
     try:
         product_id = int(product_id)
@@ -168,7 +226,43 @@ async def create_quick_stock_order(order: Any, product_id: int, quantity: int = 
     if quantity < 1:
         quantity = 1
 
-    district_id = resolve_district_id(_city_text(order))
+    city_label = official_city_label(order)
+    candidates = official_city_candidates(order)
+    district_id = _lookup_static_district(order)
+    if not district_id:
+        try:
+            district_id = await _lookup_live_district(order, session)
+        except Exception as exc:
+            log.warning(
+                "Quick city lookup failed; will not fall back to Casablanca. city=%r shipping_city=%r city_field=%r err=%s",
+                city_label,
+                getattr(order, "shipping_city", None),
+                getattr(order, "city", None),
+                exc,
+            )
+    if not district_id:
+        log.warning(
+            "Quick district not mapped; refusing silent Casablanca fallback. city=%r candidates=%r shipping_city=%r city_field=%r region_id=%r",
+            city_label,
+            candidates,
+            getattr(order, "shipping_city", None),
+            getattr(order, "city", None),
+            getattr(order, "region_id", None),
+        )
+        return {
+            "success": False,
+            "ok": False,
+            "error": "quick_district_not_mapped",
+            "status_code": 400,
+            "city": city_label,
+            "candidates": candidates,
+        }
+    log.info(
+        "Quick stock dispatch city=%r district_id=%s candidates=%r",
+        city_label,
+        district_id,
+        candidates,
+    )
     phone = _phone(order)
     payload = {
         "api_key": _api_key(),
@@ -209,6 +303,7 @@ async def create_quick_stock_order(order: Any, product_id: int, quantity: int = 
             "tracking_number": tracking,
             "message": data.get("success", "Colis ajouté avec succès.") if isinstance(data, dict) else "Colis ajouté avec succès.",
             "district_id": district_id,
+            "city": city_label,
             "quick_product_id": product_id,
             "quantity": quantity,
             "raw": data,
@@ -219,6 +314,7 @@ async def create_quick_stock_order(order: Any, product_id: int, quantity: int = 
         "error": _error_text(data, res.text),
         "status_code": res.status_code,
         "district_id": district_id,
+        "city": city_label,
         "quick_product_id": product_id,
         "quantity": quantity,
         "raw": data,

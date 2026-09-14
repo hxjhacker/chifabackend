@@ -181,6 +181,17 @@ def _fold(text: str) -> str:
 
 
 _FOLDED_TO_REGION = {_fold(city): region for city, region in CITY_TO_REGION.items() if _fold(city)}
+_REGION_NAME_FOLDS = {_fold(name) for name in REGION_NAME_TO_ID}
+
+
+def is_region_label(text: str) -> bool:
+    """True when the value is a Moroccan region name or id, not a city."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if raw.upper() in REGION_IDS or raw in REGION_NAME_TO_ID or raw in REGION_ID_TO_NAME:
+        return True
+    return _fold(raw) in _REGION_NAME_FOLDS
 
 
 def get_region_for_city(city_name: str) -> str:

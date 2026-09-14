@@ -1435,7 +1435,7 @@ async def admin_dispatch_quick_stock(
     status_now = _display_status(str(getattr(order, "status", "") or ""))
     if status_now == "cancelled":
         raise HTTPException(status_code=400, detail="cannot_ship_cancelled")
-    if len(str(getattr(order, "city", "") or "").strip()) < 2:
+    if len(str(getattr(order, "shipping_city", "") or getattr(order, "city", "") or "").strip()) < 2:
         raise HTTPException(status_code=400, detail="invalid_city")
     existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
     if existing:
@@ -1463,7 +1463,7 @@ async def admin_dispatch_quick_stock(
     qty = int(body.quantity or 1)
     if qty < 1:
         qty = int(getattr(order, "tier_qty", 1) or 1) or 1
-    result = await create_quick_stock_order(order, quick_id, qty)
+    result = await create_quick_stock_order(order, quick_id, qty, session=session)
     if not result.get("success"):
         detail = str(result.get("error") or "quick_stock_failed")
         status_code = int(result.get("status_code") or 400)
@@ -1476,6 +1476,7 @@ async def admin_dispatch_quick_stock(
                     "origin": "quick_livraison",
                     "detail": detail,
                     "message": detail,
+                    "city": result.get("city"),
                     "raw": result.get("raw"),
                     "quick_product_id": result.get("quick_product_id") or quick_id,
                     "quantity": result.get("quantity") or qty,

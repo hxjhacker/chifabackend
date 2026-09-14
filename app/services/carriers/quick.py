@@ -11,6 +11,7 @@ from app.models import CityTarif
 from app.services.carriers.base import ShippingCarrierBase
 from app.services.city_tarifs import fold_city
 from app.services.meta_livraison_cities import resolve_meta_city
+from app.utils.regions import is_region_label
 
 EMPTY_KEYS = {"", "YOUR_API_KEY_HERE"}
 HUB_CITY_FOLDS = ("fes", "fez", "fas", "fès")
@@ -189,20 +190,17 @@ def _city_name(row: dict[str, Any]) -> str:
 
 
 def _candidate_city_names(order: Any) -> list[str]:
+    """Official Meta city first (`shipping_city`), then typed `city`. Never the region."""
     seen: set[str] = set()
     names: list[str] = []
     for attr in ("shipping_city", "city"):
         raw = str(getattr(order, attr, "") or "").strip()
-        if not raw:
+        if not raw or is_region_label(raw):
             continue
-        extras = [raw, resolve_meta_city(raw)]
-        parts = fold_city(raw).split()
-        if len(parts) >= 2:
-            extras.append(parts[-1])
-        for name in extras:
+        for name in (raw, resolve_meta_city(raw)):
             text = str(name or "").strip()
             key = fold_city(text)
-            if not text or key in seen:
+            if not text or is_region_label(text) or not key or key in seen:
                 continue
             seen.add(key)
             names.append(text)
@@ -497,7 +495,9 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
             str(getattr(order, "phone", "") or ""),
             str(getattr(order, "phone_national", "") or ""),
         )
-        city = str(getattr(order, "city", "") or getattr(order, "shipping_city", "") or "").strip()
+        city = str(getattr(order, "shipping_city", "") or getattr(order, "city", "") or "").strip()
+        if is_region_label(city):
+            city = str(getattr(order, "city", "") or "").strip()
         address = " ".join(
             part
             for part in (
@@ -590,7 +590,7 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
                 "carrier": self.carrier_id,
                 "error": "quick_livraison_not_configured",
             }
-        district_id = await self.resolve_district_id(order)
+        district_id = await self.resolve_mapped_district_id(order)
         if not district_id:
             return {
                 "ok": False,
@@ -692,7 +692,9 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
             str(getattr(order, "phone", "") or ""),
             str(getattr(order, "phone_national", "") or ""),
         )
-        city = str(getattr(order, "city", "") or getattr(order, "shipping_city", "") or "").strip()
+        city = str(getattr(order, "shipping_city", "") or getattr(order, "city", "") or "").strip()
+        if is_region_label(city):
+            city = str(getattr(order, "city", "") or "").strip()
         address = str(data.get("address") or getattr(order, "address", "") or "").strip() or city
         note = str(data.get("note") if data.get("note") is not None else getattr(order, "courier_notes", "") or "")
         code = data.get("code")

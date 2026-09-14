@@ -4,6 +4,7 @@ from app.utils.regions import (
     REGION_IDS,
     REGION_NAME_TO_ID,
     get_region_for_city,
+    is_region_label,
     region_id_for_city,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "REGION_IDS",
     "REGION_NAME_TO_ID",
     "get_region_for_city",
+    "is_region_label",
     "region_id_for_city",
 ]
