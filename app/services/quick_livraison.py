@@ -8,7 +8,7 @@ import httpx
 from sqlmodel import Session
 
 from app.core.config import QUICK_LIVRAISON_API_KEY
-from app.services.city_tarifs import fold_city
+from app.services.city_tarifs import city_match_keys, fold_city
 from app.services.meta_livraison_cities import resolve_meta_city
 from app.utils.regions import is_region_label
 
@@ -19,6 +19,7 @@ QUICK_STOCK_PRODUCT_KH01 = 6005
 QUICK_API_KEY_FALLBACK = "6sD6fVFImLf0SyE2pzBMdOuiNqUHEJyE"
 CASABLANCA_DISTRICT_ID = 43
 BIR_JDID_DISTRICT_ID = 674
+LAAYOUNE_DISTRICT_ID = 307
 
 QUICK_CITIES = {
     "casablanca": CASABLANCA_DISTRICT_ID,
@@ -30,6 +31,9 @@ QUICK_CITIES = {
     "berjdid": BIR_JDID_DISTRICT_ID,
     "bir jedid": BIR_JDID_DISTRICT_ID,
     "بير الجديد": BIR_JDID_DISTRICT_ID,
+    "laayoune": LAAYOUNE_DISTRICT_ID,
+    "laayoune sahara": LAAYOUNE_DISTRICT_ID,
+    "العيون": LAAYOUNE_DISTRICT_ID,
     "marrakech": 49,
     "مراكش": 49,
     "agadir": 37,
@@ -95,16 +99,16 @@ def resolve_district_id(city_name: str) -> int | None:
     """Exact folded match against known Quick city ids. Never substring, never a silent Casablanca fallback."""
     if is_region_label(city_name):
         return None
-    folded = fold_city(city_name)
-    if not folded:
-        return None
-    found = _QUICK_CITY_INDEX.get(folded) or _QUICK_CITY_INDEX.get(folded.replace(" ", ""))
-    if found:
-        return found
+    for key in city_match_keys(city_name):
+        found = _QUICK_CITY_INDEX.get(key)
+        if found:
+            return found
     official = resolve_meta_city(city_name)
     if official and official != city_name and not is_region_label(official):
-        official_fold = fold_city(official)
-        return _QUICK_CITY_INDEX.get(official_fold) or _QUICK_CITY_INDEX.get(official_fold.replace(" ", ""))
+        for key in city_match_keys(official):
+            found = _QUICK_CITY_INDEX.get(key)
+            if found:
+                return found
     return None
 
 
@@ -118,6 +122,11 @@ def official_city_candidates(order: Any) -> list[str]:
 def official_city_label(order: Any) -> str:
     names = official_city_candidates(order)
     return names[0] if names else ""
+
+
+def unmapped_city_detail(city_label: str) -> str:
+    label = (city_label or "").strip() or "غير محددة"
+    return f"المدينة غير مطابقة في نظام Quick Livraison: {label}"
 
 
 def _lookup_static_district(order: Any) -> int | None:
@@ -253,6 +262,8 @@ async def create_quick_stock_order(
             "success": False,
             "ok": False,
             "error": "quick_district_not_mapped",
+            "detail": unmapped_city_detail(city_label),
+            "message": unmapped_city_detail(city_label),
             "status_code": 400,
             "city": city_label,
             "candidates": candidates,
@@ -285,7 +296,7 @@ async def create_quick_stock_order(
                 headers={"Accept": "application/json", "Content-Type": "application/json"},
             )
     except httpx.HTTPError as exc:
-        return {"success": False, "error": str(exc) or "quick_stock_failed", "status_code": 502}
+        return {"success": False, "ok": False, "error": str(exc) or "quick_stock_failed", "status_code": 400, "city": city_label}
 
     try:
         data = res.json()

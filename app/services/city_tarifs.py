@@ -29,6 +29,45 @@ def fold_city(text: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+CITY_NAME_SUFFIXES = {
+    "sahara",
+    "port",
+    "playa",
+    "desert",
+    "sud",
+    "nord",
+    "south",
+    "north",
+}
+
+
+def city_match_keys(name: str) -> list[str]:
+    """Folded lookup keys, including names with region suffixes stripped (Laayoune Sahara → laayoune)."""
+    folded = fold_city(name)
+    if not folded:
+        return []
+    keys: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        text = fold_city(raw)
+        if not text or text in seen:
+            return
+        seen.add(text)
+        keys.append(text)
+        compact = text.replace(" ", "")
+        if compact and compact not in seen:
+            seen.add(compact)
+            keys.append(compact)
+
+    add(folded)
+    parts = folded.split()
+    while len(parts) >= 2 and parts[-1] in CITY_NAME_SUFFIXES:
+        parts = parts[:-1]
+        add(" ".join(parts))
+    return keys
+
+
 def hub_code(raw: str | None) -> str:
     text = re.sub(r"^HUB\s+", "", (raw or "").strip(), flags=re.IGNORECASE).strip()
     return re.sub(r"\s+", " ", text).upper()

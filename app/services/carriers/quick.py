@@ -9,7 +9,7 @@ from app.core.config import QUICK_LIVRAISON_API_KEY, QUICK_LIVRAISON_API_URL
 from app.db import engine
 from app.models import CityTarif
 from app.services.carriers.base import ShippingCarrierBase
-from app.services.city_tarifs import fold_city
+from app.services.city_tarifs import city_match_keys, fold_city
 from app.services.meta_livraison_cities import resolve_meta_city
 from app.utils.regions import is_region_label
 
@@ -189,6 +189,20 @@ def _city_name(row: dict[str, Any]) -> str:
     return ""
 
 
+def _city_display_variants(raw: str) -> list[str]:
+    text = str(raw or "").strip()
+    if not text or is_region_label(text):
+        return []
+    variants = [text, resolve_meta_city(text)]
+    folded = fold_city(text)
+    compact = folded.replace(" ", "")
+    for key in city_match_keys(text):
+        if key in {folded, compact}:
+            continue
+        variants.append(key)
+    return variants
+
+
 def _candidate_city_names(order: Any) -> list[str]:
     """Official Meta city first (`shipping_city`), then typed `city`. Never the region."""
     seen: set[str] = set()
@@ -197,7 +211,7 @@ def _candidate_city_names(order: Any) -> list[str]:
         raw = str(getattr(order, attr, "") or "").strip()
         if not raw or is_region_label(raw):
             continue
-        for name in (raw, resolve_meta_city(raw)):
+        for name in _city_display_variants(raw):
             text = str(name or "").strip()
             key = fold_city(text)
             if not text or is_region_label(text) or not key or key in seen:
@@ -209,10 +223,10 @@ def _candidate_city_names(order: Any) -> list[str]:
 
 def _district_from_mapping(mapping: dict[str, int], names: list[str]) -> int | None:
     for name in names:
-        key = fold_city(name)
-        found = mapping.get(key) or mapping.get(key.replace(" ", ""))
-        if found:
-            return found
+        for key in city_match_keys(name):
+            found = mapping.get(key)
+            if found:
+                return found
     return None
 
 

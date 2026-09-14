@@ -19,7 +19,7 @@ from app.db import engine, get_session
 from app.dependencies import client_ip, get_current_admin
 from app.models import Order, Product
 from app.services.catalog import clean_product_code, find_product, resolve_order_slug
-from app.services.quick_livraison import create_quick_stock_order
+from app.services.quick_livraison import create_quick_stock_order, unmapped_city_detail
 from app.rate_limit import login_limiter
 from app.security import (
     admin_configured,
@@ -1429,88 +1429,147 @@ async def admin_dispatch_quick_stock(
     session: Session = Depends(get_session),
 ):
     _ = admin
-    order = _load_order(session, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="order_not_found")
-    status_now = _display_status(str(getattr(order, "status", "") or ""))
-    if status_now == "cancelled":
-        raise HTTPException(status_code=400, detail="cannot_ship_cancelled")
-    if len(str(getattr(order, "shipping_city", "") or getattr(order, "city", "") or "").strip()) < 2:
-        raise HTTPException(status_code=400, detail="invalid_city")
-    existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
-    if existing:
-        payload = _serialize_order(order, session)
-        payload.update({"success": True, "ok": True, "tracking_number": existing, "code_envoi": existing})
-        return payload
-    if not _has_complete_confirm_details(order):
-        raise HTTPException(status_code=400, detail="confirmation_details_required")
-
-    product = find_product(session, str(getattr(order, "product_slug", "") or ""))
-    if not product or not bool(getattr(product, "is_quick_stock", False)):
-        raise HTTPException(status_code=400, detail="not_quick_stock")
+    city_label = ""
     try:
-        catalog_quick_id = int(getattr(product, "quick_product_id", None) or 0)
-    except (TypeError, ValueError):
-        catalog_quick_id = 0
-    try:
-        requested_id = int(body.product_id or 0)
-    except (TypeError, ValueError):
-        requested_id = 0
-    quick_id = requested_id if requested_id >= 1 else catalog_quick_id
-    if quick_id < 1:
-        raise HTTPException(status_code=400, detail="quick_product_id_missing")
+        order = _load_order(session, order_id)
+        if not order:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "ok": False, "detail": "order_not_found", "message": "الطلبية غير موجودة."},
+            )
+        city_label = str(getattr(order, "shipping_city", "") or getattr(order, "city", "") or "").strip()
+        status_now = _display_status(str(getattr(order, "status", "") or ""))
+        if status_now == "cancelled":
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "ok": False, "detail": "cannot_ship_cancelled", "message": "لا يمكن شحن طلبية ملغاة."},
+            )
+        if len(city_label) < 2:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "ok": False,
+                    "detail": unmapped_city_detail(city_label),
+                    "message": unmapped_city_detail(city_label),
+                },
+            )
+        existing = str(getattr(order, "meta_livraison_code", "") or "").strip()
+        if existing:
+            payload = _serialize_order(order, session)
+            payload.update({"success": True, "ok": True, "tracking_number": existing, "code_envoi": existing})
+            return payload
+        if not _has_complete_confirm_details(order):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "ok": False,
+                    "detail": "confirmation_details_required",
+                    "message": "كمّل معلومات التوصيل قبل الشحن.",
+                },
+            )
 
-    qty = int(body.quantity or 1)
-    if qty < 1:
-        qty = int(getattr(order, "tier_qty", 1) or 1) or 1
-    result = await create_quick_stock_order(order, quick_id, qty, session=session)
-    if not result.get("success"):
-        detail = str(result.get("error") or "quick_stock_failed")
-        status_code = int(result.get("status_code") or 400)
-        return JSONResponse(
-            status_code=status_code if status_code >= 400 else 400,
-            content=jsonable_encoder(
-                {
+        product = find_product(session, str(getattr(order, "product_slug", "") or ""))
+        if not product or not bool(getattr(product, "is_quick_stock", False)):
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "ok": False, "detail": "not_quick_stock", "message": "هذا المنتج ليس من مخزون Quick."},
+            )
+        try:
+            catalog_quick_id = int(getattr(product, "quick_product_id", None) or 0)
+        except (TypeError, ValueError):
+            catalog_quick_id = 0
+        try:
+            requested_id = int(body.product_id or 0)
+        except (TypeError, ValueError):
+            requested_id = 0
+        quick_id = requested_id if requested_id >= 1 else catalog_quick_id
+        if quick_id < 1:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "ok": False,
+                    "detail": "quick_product_id_missing",
+                    "message": "أضف معرف المنتج في كويك من إدارة المنتجات قبل الإرسال من المخزون.",
+                },
+            )
+
+        qty = int(body.quantity or 1)
+        if qty < 1:
+            qty = int(getattr(order, "tier_qty", 1) or 1) or 1
+        result = await create_quick_stock_order(order, quick_id, qty, session=session)
+        if not result.get("success"):
+            city_label = str(result.get("city") or city_label)
+            error_code = str(result.get("error") or "")
+            if error_code == "quick_district_not_mapped":
+                detail = str(result.get("detail") or unmapped_city_detail(city_label))
+            else:
+                detail = str(result.get("detail") or result.get("message") or error_code or "quick_stock_failed")
+            status_code = int(result.get("status_code") or 400)
+            if status_code >= 500:
+                status_code = 400
+            return JSONResponse(
+                status_code=status_code,
+                content=jsonable_encoder(
+                    {
+                        "success": False,
+                        "ok": False,
+                        "origin": "quick_livraison",
+                        "detail": detail,
+                        "message": detail,
+                        "city": city_label,
+                        "raw": result.get("raw"),
+                        "quick_product_id": result.get("quick_product_id") or quick_id,
+                        "quantity": result.get("quantity") or qty,
+                    }
+                ),
+            )
+        tracking = str(result.get("tracking_number") or "").strip()
+        if not tracking:
+            return JSONResponse(
+                status_code=400,
+                content={
                     "success": False,
                     "ok": False,
                     "origin": "quick_livraison",
-                    "detail": detail,
-                    "message": detail,
-                    "city": result.get("city"),
-                    "raw": result.get("raw"),
-                    "quick_product_id": result.get("quick_product_id") or quick_id,
-                    "quantity": result.get("quantity") or qty,
-                }
-            ),
+                    "detail": "Quick Livraison لم تُرجع كود التتبع.",
+                    "message": "Quick Livraison لم تُرجع كود التتبع.",
+                },
+            )
+        ticket = str(result.get("ticket_url") or "").strip() or None
+        product.stock_quantity = max(0, int(getattr(product, "stock_quantity", 0) or 0) - qty)
+        session.add(product)
+        _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison")
+        session.refresh(order)
+        payload = _serialize_order(order, session)
+        payload.update(
+            {
+                "ok": True,
+                "success": True,
+                "tracking_number": tracking,
+                "code_envoi": tracking,
+                "message": result.get("message") or "Colis ajouté avec succès.",
+                "quick_product_id": result.get("quick_product_id") or quick_id,
+                "quantity": result.get("quantity") or qty,
+                "stock_quantity": int(getattr(product, "stock_quantity", 0) or 0),
+            }
         )
-    tracking = str(result.get("tracking_number") or "").strip()
-    if not tracking:
+        return payload
+    except HTTPException as exc:
+        if exc.status_code < 500:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"success": False, "ok": False, "detail": exc.detail, "message": str(exc.detail)},
+            )
+        print(f"[QUICK_STOCK_ERROR] {traceback.format_exc()}", flush=True)
+        detail = unmapped_city_detail(city_label)
+        return JSONResponse(status_code=400, content={"success": False, "ok": False, "detail": detail, "message": detail, "city": city_label})
+    except Exception:
+        print(f"[QUICK_STOCK_ERROR] {traceback.format_exc()}", flush=True)
+        detail = unmapped_city_detail(city_label)
         return JSONResponse(
             status_code=400,
-            content={
-                "success": False,
-                "ok": False,
-                "origin": "quick_livraison",
-                "detail": "quick_stock_no_tracking",
-                "message": "Quick Livraison لم تُرجع كود التتبع.",
-            },
+            content={"success": False, "ok": False, "detail": detail, "message": detail, "city": city_label},
         )
-    ticket = str(result.get("ticket_url") or "").strip() or None
-    product.stock_quantity = max(0, int(getattr(product, "stock_quantity", 0) or 0) - qty)
-    session.add(product)
-    _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison")
-    session.refresh(order)
-    payload = _serialize_order(order, session)
-    payload.update(
-        {
-            "ok": True,
-            "success": True,
-            "tracking_number": tracking,
-            "code_envoi": tracking,
-            "message": result.get("message") or "Colis ajouté avec succès.",
-            "quick_product_id": result.get("quick_product_id") or quick_id,
-            "quantity": result.get("quantity") or qty,
-            "stock_quantity": int(getattr(product, "stock_quantity", 0) or 0),
-        }
-    )
-    return payload
