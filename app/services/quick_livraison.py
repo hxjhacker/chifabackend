@@ -8,6 +8,7 @@ import httpx
 from sqlmodel import Session
 
 from app.core.config import QUICK_LIVRAISON_API_KEY
+from app.services.carriers.quick import QUICK_HTTP_TIMEOUT, canonical_quick_tracking, quick_client_code
 from app.services.city_tarifs import city_match_keys, fold_city
 from app.services.meta_livraison_cities import resolve_meta_city
 from app.utils.regions import is_region_label
@@ -292,6 +293,7 @@ async def create_quick_stock_order(
             candidates,
         )
         phone = _phone(order)
+        cfg_code = quick_client_code(order)
         payload = {
             "api_key": _api_key(),
             "district_id": district_id,
@@ -299,13 +301,11 @@ async def create_quick_stock_order(
             "amount": _cod_amount(order),
             "phone": phone,
             "address": _address(order),
-            "code": f"CFG-{str(getattr(order, 'id', ''))[:8]}",
+            "code": cfg_code,
             "note": str(getattr(order, "courier_notes", "") or ""),
             "open": False,
             "received_quantity": {str(product_id): int(quantity)},
         }
-
-        from app.services.carriers.quick import QUICK_HTTP_TIMEOUT
 
         try:
             async with httpx.AsyncClient(timeout=QUICK_HTTP_TIMEOUT, follow_redirects=True) as client:
@@ -344,9 +344,15 @@ async def create_quick_stock_order(
 
         tracking = ""
         if isinstance(data, dict):
-            tracking = str(data.get("tracking_number") or "").strip()
+            tracking = str(data.get("code") or data.get("reference") or data.get("tracking_number") or "").strip()
+        tracking = canonical_quick_tracking(tracking, cfg_code)
 
         if res.status_code in (200, 201) and tracking:
+            billed = None
+            if isinstance(data, dict):
+                from app.services.carrier_rates import extract_quick_billed_fee
+
+                billed = extract_quick_billed_fee(data)
             return {
                 "success": True,
                 "ok": True,
@@ -356,6 +362,7 @@ async def create_quick_stock_order(
                 "city": city_label,
                 "quick_product_id": product_id,
                 "quantity": quantity,
+                "shipping_cost": billed,
                 "raw": data,
             }
         fail_status = res.status_code if 400 <= res.status_code < 500 else 400

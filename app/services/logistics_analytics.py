@@ -5,7 +5,8 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from app.models import Order
+from app.models import DeliveryCity, Order
+from app.services.carrier_rates import _index_rows, _find_indexed
 from app.services.city_tarifs import (
     DEFAULT_DELIVERY_FEE,
     DEFAULT_REFUSAL_FEE,
@@ -13,6 +14,7 @@ from app.services.city_tarifs import (
     load_tarif_index,
 )
 from app.services.pricing import cents_to_mad
+from app.services.quick_pricing import QUICK_REFUS_PRICE, QUICK_RETOUR_PRICE, _money
 from app.services.regions import REGION_ID_TO_NAME, REGION_IDS, region_id_for_city
 
 NEW_EQUIV = ("pending", "upsell_accepted", "new")
@@ -83,11 +85,60 @@ def _finalize_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
     return bucket
 
 
+def _carrier_fees(
+    *,
+    carrier: str,
+    shipping_city: str | None,
+    city: str | None,
+    stored_cost: float | None,
+    tarifs,
+    quick_index: dict[str, DeliveryCity],
+) -> tuple[float, float, float, bool]:
+    names = (shipping_city, city)
+    if stored_cost is not None:
+        try:
+            delivery_fee = round(float(stored_cost), 2)
+            if delivery_fee >= 0:
+                if carrier == "quick_livraison":
+                    return delivery_fee, QUICK_REFUS_PRICE, QUICK_RETOUR_PRICE, True
+                meta = tarifs.find(*names)
+                refusal = meta.refusal_fee if meta else DEFAULT_REFUSAL_FEE
+                returned = meta.return_fee if meta else DEFAULT_RETURN_FEE
+                return delivery_fee, refusal, returned, True
+        except (TypeError, ValueError):
+            pass
+    if carrier == "quick_livraison":
+        hit = _find_indexed(quick_index, *names)
+        if hit is not None:
+            return _money(hit.quick_delivery_price), QUICK_REFUS_PRICE, QUICK_RETOUR_PRICE, True
+        meta = tarifs.find(*names)
+        if meta:
+            return meta.delivery_fee, QUICK_REFUS_PRICE, QUICK_RETOUR_PRICE, False
+        return DEFAULT_DELIVERY_FEE, QUICK_REFUS_PRICE, QUICK_RETOUR_PRICE, False
+    delivery_fee, refusal_fee, return_fee = tarifs.fees_for(*names)
+    return delivery_fee, refusal_fee, return_fee, bool(tarifs.find(*names))
+
+
 def logistics_analytics(session: Session) -> dict[str, Any]:
     tarifs = load_tarif_index(session)
-    rows = session.exec(
-        select(Order.status, Order.total_cents, Order.region_id, Order.city, Order.shipping_city)
-    ).all()
+    quick_index = _index_rows(list(session.exec(select(DeliveryCity)).all()), "city_name", "city_name_ar")
+    try:
+        rows = session.exec(
+            select(
+                Order.status,
+                Order.total_cents,
+                Order.region_id,
+                Order.city,
+                Order.shipping_city,
+                Order.carrier,
+                Order.shipping_cost,
+            )
+        ).all()
+    except Exception:
+        fallback = session.exec(
+            select(Order.status, Order.total_cents, Order.region_id, Order.city, Order.shipping_city, Order.carrier)
+        ).all()
+        rows = [(*row, None) for row in fallback]
 
     delivered_cents = in_transit_cents = 0
     delivered_count = in_transit_count = returned_count = cancelled_count = 0
@@ -97,13 +148,20 @@ def logistics_analytics(session: Session) -> dict[str, Any]:
     unmapped = _empty_region("")
     unmapped["name"] = "غير محددة"
 
-    for raw_status, cents, region_id, city, shipping_city in rows:
+    for raw_status, cents, region_id, city, shipping_city, carrier, shipping_cost in rows:
         display = _display_status(raw_status or "pending")
         amount = int(cents or 0)
-        delivery_fee, refusal_fee, return_fee = tarifs.fees_for(shipping_city, city)
-        hit = tarifs.find(shipping_city, city)
+        carrier_id = (carrier or "meta_livraison").strip() or "meta_livraison"
+        delivery_fee, refusal_fee, return_fee, mapped = _carrier_fees(
+            carrier=carrier_id,
+            shipping_city=shipping_city,
+            city=city,
+            stored_cost=shipping_cost,
+            tarifs=tarifs,
+            quick_index=quick_index,
+        )
         if display in ("delivered", "returned", "cancelled"):
-            if hit:
+            if mapped:
                 mapped_fee_orders += 1
             else:
                 unmapped_fee_orders += 1

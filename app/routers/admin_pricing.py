@@ -9,10 +9,10 @@ from sqlmodel import Session, select
 from app.db import get_session
 from app.dependencies import get_current_admin
 from app.models import DeliveryCity
+from app.services.carrier_rates import apply_city_rate_patch
 from app.services.quick_pricing import (
     DEFAULT_COMPETITOR_NAME,
-    QUICK_REFUS_PRICE,
-    QUICK_RETOUR_PRICE,
+    META_COMPETITOR_NAME,
     build_stats,
     list_delivery_cities,
     load_pricing_file,
@@ -27,6 +27,8 @@ class CompetitorPricePatch(BaseModel):
     competitor_delivery_price: float | None = Field(default=None, ge=0, le=9999)
     competitor_retour_price: float | None = Field(default=None, ge=0, le=9999)
     competitor_name: str | None = Field(default=None, max_length=80)
+    quick_delivery_price: float | None = Field(default=None, ge=0, le=9999)
+    meta_delivery_fee: float | None = Field(default=None, ge=0, le=9999)
 
 
 def _pricing_payload() -> dict:
@@ -75,19 +77,26 @@ def admin_patch_pricing_comparison(
     session: Session = Depends(get_session),
 ):
     _ = admin
-    row = session.exec(select(DeliveryCity).where(DeliveryCity.id == city_id)).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="city_not_found")
-    if body.competitor_delivery_price is not None:
-        row.competitor_delivery_price = round(float(body.competitor_delivery_price), 2)
-    if body.competitor_retour_price is not None:
-        row.competitor_retour_price = round(float(body.competitor_retour_price), 2)
+    meta_fee = body.meta_delivery_fee if body.meta_delivery_fee is not None else body.competitor_delivery_price
+    try:
+        patched = apply_city_rate_patch(
+            session,
+            pricing_city_id=city_id,
+            quick_delivery_price=body.quick_delivery_price,
+            meta_delivery_fee=meta_fee,
+            competitor_retour_price=body.competitor_retour_price,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     if body.competitor_name is not None:
-        name = body.competitor_name.strip() or DEFAULT_COMPETITOR_NAME
-        row.competitor_name = name[:80]
-    row.quick_retour_price = QUICK_RETOUR_PRICE
-    row.quick_refus_price = QUICK_REFUS_PRICE
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return serialize_delivery_city(row)
+        row = session.exec(select(DeliveryCity).where(DeliveryCity.id == city_id)).first()
+        if row is not None:
+            name = body.competitor_name.strip() or DEFAULT_COMPETITOR_NAME
+            if name.casefold() in {"meta", "meta livraison", "metalivraison"}:
+                name = META_COMPETITOR_NAME
+            row.competitor_name = name[:80]
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return serialize_delivery_city(row)
+    return patched

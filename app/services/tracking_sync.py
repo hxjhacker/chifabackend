@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from app.db import engine
 from app.models import Order
 from app.services.carriers import get_carrier, normalize_carrier
+from app.services.carriers.quick import is_dummy_parcel_code, quick_client_code
 
 MAX_SYNC = 200
 PUBLIC_TO_DB = {
@@ -44,7 +45,7 @@ def _apply_status(order: Order, next_status: str) -> None:
 
 
 def _cfg_reference(order: Order) -> str:
-    return f"CFG-{str(order.id)[:8]}"
+    return quick_client_code(order)
 
 
 def _load_sync_jobs() -> list[dict[str, Any]]:
@@ -53,27 +54,42 @@ def _load_sync_jobs() -> list[dict[str, Any]]:
         rows = session.exec(select(Order).where(Order.status.in_(("shipped", "in_shipping")))).all()
         tracked = [order for order in rows if str(getattr(order, "meta_livraison_code", "") or "").strip()]
         for order in tracked[:MAX_SYNC]:
-            code = str(order.meta_livraison_code or "").strip()
+            stored = str(order.meta_livraison_code or "").strip()
             current = str(order.status or "")
             if current == "in_shipping":
                 current = "shipped"
+            carrier = normalize_carrier(getattr(order, "carrier", None))
+            cfg = _cfg_reference(order)
+            if carrier == "quick_livraison":
+                query_code = cfg or stored
+                extras = []
+                if stored and stored != query_code and not is_dummy_parcel_code(stored):
+                    extras.append(stored)
+            else:
+                query_code = stored
+                extras = [cfg] if cfg and cfg != stored else []
             jobs.append(
                 {
                     "order_id": str(order.id),
-                    "tracking": code,
-                    "carrier": normalize_carrier(getattr(order, "carrier", None)),
+                    "tracking": query_code,
+                    "stored_tracking": stored,
+                    "rewrite_tracking": cfg if carrier == "quick_livraison" and is_dummy_parcel_code(stored) and cfg else "",
+                    "carrier": carrier,
                     "from_status": current,
-                    "extra_codes": [_cfg_reference(order)],
+                    "extra_codes": extras,
                 }
             )
     return jobs
 
 
-def _persist_status_updates(updates: list[tuple[str, str]]) -> None:
-    if not updates:
+def _persist_status_updates(updates: list[tuple[str, str]], tracking_rewrites: list[tuple[str, str]] | None = None) -> None:
+    if not updates and not tracking_rewrites:
         return
+    rewrites = {order_id: code for order_id, code in (tracking_rewrites or []) if order_id and code}
     with Session(engine) as session:
+        seen: set[str] = set()
         for order_id, db_status in updates:
+            seen.add(order_id)
             try:
                 order = session.get(Order, UUID(order_id))
             except Exception:
@@ -81,6 +97,21 @@ def _persist_status_updates(updates: list[tuple[str, str]]) -> None:
             if not order:
                 continue
             _apply_status(order, db_status)
+            new_code = rewrites.get(order_id)
+            if new_code:
+                order.meta_livraison_code = new_code[:80]
+            session.add(order)
+        for order_id, new_code in rewrites.items():
+            if order_id in seen:
+                continue
+            try:
+                order = session.get(Order, UUID(order_id))
+            except Exception:
+                order = session.get(Order, order_id)
+            if not order:
+                continue
+            order.meta_livraison_code = new_code[:80]
+            order.updated_at = datetime.now(timezone.utc)
             session.add(order)
         session.commit()
 
@@ -88,10 +119,14 @@ def _persist_status_updates(updates: list[tuple[str, str]]) -> None:
 async def sync_shipped_orders_async() -> dict[str, Any]:
     details: list[dict[str, Any]] = []
     updates: list[tuple[str, str]] = []
+    tracking_rewrites: list[tuple[str, str]] = []
     jobs = _load_sync_jobs()
     for job in jobs:
         carrier_id = str(job["carrier"])
         code = str(job["tracking"])
+        rewrite = str(job.get("rewrite_tracking") or "").strip()
+        if rewrite:
+            tracking_rewrites.append((str(job["order_id"]), rewrite))
         adapter = get_carrier(carrier_id)
         if not adapter.is_configured():
             details.append(
@@ -126,7 +161,7 @@ async def sync_shipped_orders_async() -> dict[str, Any]:
         current = str(job["from_status"])
         item = {
             "order_id": job["order_id"],
-            "tracking": code,
+            "tracking": rewrite or code,
             "lookup_code": result.get("lookup_code") or code,
             "carrier": carrier_id,
             "from_status": current,
@@ -142,7 +177,7 @@ async def sync_shipped_orders_async() -> dict[str, Any]:
         item["updated"] = True
         item["to_status"] = db_status
         details.append(item)
-    _persist_status_updates(updates)
+    _persist_status_updates(updates, tracking_rewrites)
     return {"total_checked": len(details), "updated_count": len(updates), "details": details}
 
 

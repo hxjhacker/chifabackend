@@ -362,18 +362,39 @@ def _product_label(row: dict[str, Any]) -> str:
     return ""
 
 
+def quick_client_code(order: Any) -> str:
+    """Client reference Quick actually indexes: CFG- + first 8 chars of the order UUID."""
+    order_id = str(getattr(order, "id", "") or getattr(order, "order_id", "") or "").strip()
+    if not order_id:
+        return ""
+    return f"CFG-{order_id[:8]}"
+
+
+def is_dummy_parcel_code(code: str | None) -> bool:
+    return str(code or "").strip().upper().startswith("PARCEL_")
+
+
+def canonical_quick_tracking(raw: str | None, fallback: str = "") -> str:
+    """Never persist PARCEL_* — Quick's app looks up the CFG- client code, not that dummy."""
+    text = str(raw or "").strip()
+    if text and not is_dummy_parcel_code(text):
+        return text
+    return str(fallback or "").strip()
+
+
 def _tracking_from(payload: Any) -> str:
     if isinstance(payload, dict):
         for key in (
-            "tracking_number",
-            "trackingNumber",
-            "tracking",
+            "code",
+            "reference",
+            "client_order_ref",
             "code_envoi",
             "codeEnvoi",
-            "code",
+            "tracking",
+            "tracking_number",
+            "trackingNumber",
             "parcel_code",
             "parcelCode",
-            "reference",
             "id",
         ):
             value = payload.get(key)
@@ -383,7 +404,10 @@ def _tracking_from(payload: Any) -> str:
                     if nested:
                         return nested
                     continue
-                return str(value).strip()
+                text = str(value).strip()
+                if is_dummy_parcel_code(text):
+                    continue
+                return text
         for key in ("data", "parcel", "delivery", "result"):
             nested = payload.get(key)
             if isinstance(nested, dict):
@@ -430,31 +454,30 @@ def _parcel_missing(payload: Any) -> bool:
             "not exist",
             "inconnu",
             "introuvable",
+            "لم يتم العثور",
+            "غير موجود",
         )
     )
 
 
 def tracking_lookup_codes(tracking_number: str, extra_codes: Sequence[str] | None = None) -> list[str]:
-    """Quick barcode is numeric. Stored values like PARCEL_89947944 must be stripped."""
-    raw = str(tracking_number or "").strip()
+    """Query Quick by CFG- client code. Dummy PARCEL_* values are never sent."""
     codes: list[str] = []
     seen: set[str] = set()
 
     def add(value: str) -> None:
         text = str(value or "").strip()
-        if not text or text in seen:
+        if not text or text in seen or is_dummy_parcel_code(text):
             return
         seen.add(text)
         codes.append(text)
 
-    add(raw)
-    upper = raw.upper()
-    if upper.startswith("PARCEL_"):
-        add(raw.split("_", 1)[-1].strip())
-    digits = "".join(ch for ch in raw if ch.isdigit())
-    if digits:
-        add(digits)
-    for item in extra_codes or ():
+    extras = [str(item).strip() for item in (extra_codes or ()) if str(item).strip()]
+    for item in extras:
+        if item.upper().startswith("CFG-"):
+            add(item)
+    add(tracking_number)
+    for item in extras:
         add(item)
     return codes
 
@@ -636,7 +659,7 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         ).strip() or city or "Maroc"
         name = str(getattr(order, "full_name", "") or "").strip() or "Client"
         order_amount = _order_amount(order)
-        code = str(getattr(order, "code", None) or getattr(order, "id", "") or "")
+        code = quick_client_code(order) or str(getattr(order, "code", None) or getattr(order, "id", "") or "")
         qty = quantity if quantity is not None else _qty(order)
         comment = note if note is not None else str(getattr(order, "courier_notes", "") or "").strip()
         sku = str(product_code or getattr(order, "product_code", "") or "").strip()
@@ -682,9 +705,11 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         return payload
 
     async def _store_parcel(self, order: Any, payload: dict[str, Any]) -> dict[str, Any]:
-        code = str(payload.get("code") or getattr(order, "id", "") or "")
         status_code, parsed, text = await self._post_store(payload)
-        tracking = _tracking_from(parsed) or (code if _store_succeeded(status_code, parsed) else "")
+        fallback = quick_client_code(order) or str(payload.get("code") or "")
+        tracking = canonical_quick_tracking(_tracking_from(parsed), fallback)
+        if not tracking and _store_succeeded(status_code, parsed):
+            tracking = fallback
         if not _store_succeeded(status_code, parsed) or not tracking:
             return {
                 "ok": False,
@@ -772,11 +797,12 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
             }
         body = {key: value for key, value in body.items() if value is not None}
         status_code, parsed, text = await self._post_store_json(body)
-        tracking = ""
-        if isinstance(parsed, dict):
-            tracking = str(parsed.get("tracking_number") or "").strip()
-        if not tracking:
-            tracking = _tracking_from(parsed)
+        fallback = str(body.get("code") or "")
+        if order is not None:
+            fallback = quick_client_code(order) or fallback
+        tracking = canonical_quick_tracking(_tracking_from(parsed), fallback)
+        if not tracking and _store_succeeded(status_code, parsed):
+            tracking = fallback
         if not _store_succeeded(status_code, parsed) or not tracking:
             return {
                 "ok": False,
@@ -824,8 +850,8 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
         address = str(data.get("address") or getattr(order, "address", "") or "").strip() or city
         note = str(data.get("note") if data.get("note") is not None else getattr(order, "courier_notes", "") or "")
         code = data.get("code")
-        if code in (None, ""):
-            code = getattr(order, "code", None)
+        if code in (None, "") or is_dummy_parcel_code(str(code)):
+            code = quick_client_code(order) or getattr(order, "code", None)
         payload: dict[str, Any] = {
             "district_id": _as_int(data.get("district_id")),
             "name": str(data.get("name") or getattr(order, "full_name", "") or "").strip() or "Client",

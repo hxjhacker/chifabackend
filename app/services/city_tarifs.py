@@ -182,30 +182,10 @@ def _lookup_id(row: CityTarif) -> int:
     return int(row.id.int % 2_147_483_647)
 
 
-def list_lookup_tarifs(session: Session, search: str = "", limit: int = 50) -> list[dict[str, Any]]:
-    cap = max(1, min(int(limit or 50), 200))
-    needle = (search or "").strip()
-    stmt = select(CityTarif).order_by(col(CityTarif.city_name))
-    if needle:
-        like = f"%{needle}%"
-        stmt = stmt.where(
-            or_(
-                col(CityTarif.city_name).ilike(like),
-                col(CityTarif.hub_name).ilike(like),
-            )
-        )
-    rows = session.exec(stmt.limit(cap)).all()
-    return [
-        {
-            "id": _lookup_id(row),
-            "city_name": row.city_name,
-            "hub_name": hub_code(row.hub_name) or (row.hub_name or ""),
-            "delivery_fee": _money(row.delivery_fee, DEFAULT_DELIVERY_FEE),
-            "refusal_fee": _money(row.refusal_fee, DEFAULT_REFUSAL_FEE),
-            "return_fee": _money(row.return_fee, DEFAULT_RETURN_FEE),
-        }
-        for row in rows
-    ]
+def list_lookup_tarifs(session: Session, search: str = "", limit: int = 200) -> list[dict[str, Any]]:
+    from app.services.carrier_rates import list_carrier_city_rates
+
+    return list_carrier_city_rates(session, search=search, limit=limit)
 
 
 def _parse_record(row: dict[str, Any]) -> dict[str, Any] | None:

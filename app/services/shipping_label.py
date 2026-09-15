@@ -96,7 +96,13 @@ _FONTS: tuple[str, str] | None = None
 
 
 def tracking_of(order: Any) -> str:
-    return str(getattr(order, "meta_livraison_code", None) or getattr(order, "tracking_number", None) or "").strip()
+    from app.services.carriers import normalize_carrier
+    from app.services.carriers.quick import is_dummy_parcel_code, quick_client_code
+
+    code = str(getattr(order, "meta_livraison_code", None) or getattr(order, "tracking_number", None) or "").strip()
+    if normalize_carrier(getattr(order, "carrier", None)) == "quick_livraison" and is_dummy_parcel_code(code):
+        return quick_client_code(order) or code
+    return code
 
 
 def _font_files() -> list[tuple[Path, Path]]:

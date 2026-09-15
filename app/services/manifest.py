@@ -29,7 +29,13 @@ def _city(order: Any) -> str:
 
 
 def _tracking(order: Any) -> str:
-    return str(getattr(order, "meta_livraison_code", "") or "").strip() or "—"
+    from app.services.carriers import normalize_carrier
+    from app.services.carriers.quick import is_dummy_parcel_code, quick_client_code
+
+    code = str(getattr(order, "meta_livraison_code", "") or "").strip()
+    if normalize_carrier(getattr(order, "carrier", None)) == "quick_livraison" and is_dummy_parcel_code(code):
+        code = quick_client_code(order) or code
+    return code or "—"
 
 
 def _cod(order: Any) -> float:

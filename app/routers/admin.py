@@ -34,14 +34,20 @@ from app.services.pricing import cents_to_mad
 from app.services.page_views import observatory_stats
 from app.services.logistics_analytics import logistics_analytics
 from app.services.city_tarifs import list_lookup_tarifs, load_tarif_index, serialize_tarifs, sync_meta_city_tarifs
+from app.services.carrier_rates import (
+    apply_city_rate_patch,
+    extract_quick_billed_fee,
+    resolve_dispatch_shipping_cost,
+)
 from app.services.carriers import (
     carrier_catalog,
     get_carrier,
     normalize_carrier,
     run_sync,
 )
-from app.services.carriers.quick import sync_quick_districts
+from app.services.carriers.quick import is_dummy_parcel_code, quick_client_code, sync_quick_districts
 from app.services.meta_livraison_cities import is_official_meta_city, resolve_meta_city
+from app.utils.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -309,7 +315,17 @@ def _iso(value: object) -> str | None:
     return str(value)
 
 
+def _order_tracking_code(order: Order) -> str | None:
+    code = str(getattr(order, "meta_livraison_code", None) or "").strip() or None
+    if not code:
+        return None
+    if normalize_carrier(getattr(order, "carrier", None)) == "quick_livraison" and is_dummy_parcel_code(code):
+        return quick_client_code(order) or code
+    return code
+
+
 def _serialize_order(order: Order, session: Session | None = None) -> dict:
+    tracking = _order_tracking_code(order)
     return {
         "order_id": str(order.id),
         "created_at": _iso(order.created_at),
@@ -351,17 +367,18 @@ def _serialize_order(order: Order, session: Session | None = None) -> dict:
         "shipped_at": _iso(getattr(order, "shipped_at", None)),
         "delivered_at": _iso(getattr(order, "delivered_at", None)),
         "cancelled_at": _iso(getattr(order, "cancelled_at", None)),
-        "meta_livraison_code": getattr(order, "meta_livraison_code", None),
+        "meta_livraison_code": tracking,
         "meta_livraison_sent_at": _iso(getattr(order, "meta_livraison_sent_at", None)),
         "meta_livraison_ticket_url": getattr(order, "meta_livraison_ticket_url", None),
         "carrier": normalize_carrier(getattr(order, "carrier", None)),
         "carrier_status": getattr(order, "carrier_status", None),
         "dispatched_at": _iso(getattr(order, "dispatched_at", None)),
+        "shipping_cost": getattr(order, "shipping_cost", None),
         "product_code": _order_product_code(order, session),
         "quick_product_id": _order_quick_product_id(order, session),
         "is_quick_stock": _order_is_quick_stock(order, session),
-        "tracking_number": getattr(order, "meta_livraison_code", None),
-        "code_envoi": getattr(order, "meta_livraison_code", None),
+        "tracking_number": tracking,
+        "code_envoi": tracking,
     }
 
 
@@ -487,6 +504,7 @@ def _persist_shipped(
     *,
     commit: bool = True,
     carrier: str | None = None,
+    shipping_cost: float | None = None,
 ) -> None:
     cols = _order_column_names(session)
     now = datetime.now(timezone.utc)
@@ -497,6 +515,11 @@ def _persist_shipped(
     _assign(order, cols, "carrier", carrier_id)
     _assign(order, cols, "carrier_status", "sent_to_carrier")
     _assign(order, cols, "dispatched_at", getattr(order, "dispatched_at", None) or now)
+    if shipping_cost is not None:
+        try:
+            _assign(order, cols, "shipping_cost", round(float(shipping_cost), 2))
+        except (TypeError, ValueError):
+            pass
     _assign(order, cols, "status", "shipped")
     _stamp_status(order, "shipped", cols)
     _assign(order, cols, "updated_at", now)
@@ -561,8 +584,10 @@ def _dispatch_one(
         }
     code = str(result.get("tracking_number") or "").strip() or str(order.id).replace("-", "")[:8].upper()
     ticket_url = str(result.get("ticket_url") or "").strip() or None
-    _persist_shipped(session, order, code, ticket_url, commit=commit, carrier=carrier_id)
-    return {"order_id": order_id, "success": True, "tracking": code, "error": "", "carrier": carrier_id}
+    billed = extract_quick_billed_fee(result.get("raw") or result) if carrier_id == "quick_livraison" else None
+    shipping_cost = resolve_dispatch_shipping_cost(session, order, carrier_id, billed=billed)
+    _persist_shipped(session, order, code, ticket_url, commit=commit, carrier=carrier_id, shipping_cost=shipping_cost)
+    return {"order_id": order_id, "success": True, "tracking": code, "error": "", "carrier": carrier_id, "shipping_cost": shipping_cost}
 
 
 def apply_order_update(
@@ -785,12 +810,44 @@ def admin_logistics_analytics(
 @router.get("/tarifs")
 def admin_tarifs_lookup(
     search: str = Query(default="", max_length=80),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=200, ge=1, le=800),
     admin: dict = Depends(get_current_admin),
     session: Session = Depends(get_session),
 ):
     _ = admin
     return list_lookup_tarifs(session, search=search, limit=limit)
+
+
+class TarifRatePatch(BaseModel):
+    city_name: str | None = Field(default=None, max_length=160)
+    pricing_city_id: str | None = Field(default=None, max_length=64)
+    meta_city_id: str | None = Field(default=None, max_length=32)
+    quick_delivery_price: float | None = Field(default=None, ge=0, le=9999)
+    meta_delivery_fee: float | None = Field(default=None, ge=0, le=9999)
+    competitor_delivery_price: float | None = Field(default=None, ge=0, le=9999)
+    competitor_retour_price: float | None = Field(default=None, ge=0, le=9999)
+
+
+@router.patch("/tarifs")
+def admin_tarifs_patch(
+    body: TarifRatePatch,
+    admin: dict = Depends(get_current_admin),
+    session: Session = Depends(get_session),
+):
+    _ = admin
+    meta_fee = body.meta_delivery_fee if body.meta_delivery_fee is not None else body.competitor_delivery_price
+    try:
+        return apply_city_rate_patch(
+            session,
+            pricing_city_id=body.pricing_city_id,
+            meta_city_id=body.meta_city_id,
+            city_name=body.city_name,
+            quick_delivery_price=body.quick_delivery_price,
+            meta_delivery_fee=meta_fee,
+            competitor_retour_price=body.competitor_retour_price,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/city-tarifs")
@@ -1562,7 +1619,9 @@ def _finalize_quick_stock_dispatch(
         if product:
             product.stock_quantity = max(0, int(getattr(product, "stock_quantity", 0) or 0) - qty)
             session.add(product)
-        _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison")
+        billed = extract_quick_billed_fee(result.get("raw") or result)
+        shipping_cost = resolve_dispatch_shipping_cost(session, order, "quick_livraison", billed=billed)
+        _persist_shipped(session, order, tracking, ticket, carrier="quick_livraison", shipping_cost=shipping_cost)
         session.refresh(order)
         payload = _serialize_order(order, session)
         payload.update(
@@ -1571,6 +1630,7 @@ def _finalize_quick_stock_dispatch(
                 "success": True,
                 "tracking_number": tracking,
                 "code_envoi": tracking,
+                "shipping_cost": shipping_cost,
                 "message": result.get("message") or "Colis ajouté avec succès.",
                 "quick_product_id": result.get("quick_product_id"),
                 "quantity": result.get("quantity") or qty,

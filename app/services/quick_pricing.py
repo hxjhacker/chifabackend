@@ -10,6 +10,7 @@ from sqlmodel import Session, col, select
 
 from app.models import CityTarif, DeliveryCity, utcnow
 from app.services.city_tarifs import fold_city
+from app.utils.regions import REGION_ID_TO_NAME, get_region_for_city, region_id_for_city
 
 PRICING_JSON = Path(__file__).resolve().parents[1] / "data" / "quick_pricing.json"
 QUICK_RETOUR_PRICE = 0.0
@@ -57,6 +58,8 @@ AR_ALIASES: dict[str, str] = {
     "khémisset": "الخميسات",
     "settat": "سطات",
     "berrechid": "برشيد",
+    "bir jdid": "بير الجديد",
+    "birjdid": "بير الجديد",
     "laayoune": "العيون",
     "laâyoune": "العيون",
     "dakhla": "الداخلة",
@@ -159,6 +162,17 @@ def _match_meta(index: dict[str, CityTarif], city: str) -> CityTarif | None:
     return index.get(key) or index.get(key.replace(" ", ""))
 
 
+def _region_fields(city_name: str, city_name_ar: str = "") -> tuple[str, str]:
+    for name in (city_name, city_name_ar):
+        region_id = region_id_for_city(name or "")
+        if region_id:
+            return region_id, REGION_ID_TO_NAME.get(region_id, get_region_for_city(name))
+        region_name = get_region_for_city(name or "")
+        if region_name and region_name != "غير محددة":
+            return region_id_for_city(name), region_name
+    return "", "غير محددة"
+
+
 def serialize_delivery_city(row: DeliveryCity) -> dict[str, Any]:
     quick_delivery = _money(row.quick_delivery_price)
     competitor_delivery = None if row.competitor_delivery_price is None else _money(row.competitor_delivery_price)
@@ -167,26 +181,34 @@ def serialize_delivery_city(row: DeliveryCity) -> dict[str, Any]:
     competitor_total = None if competitor_delivery is None else round(competitor_delivery + competitor_retour, 2)
     cheaper = "unknown"
     savings = None
-    if competitor_total is not None:
-        savings = round(competitor_total - quick_total, 2)
+    if competitor_delivery is not None:
+        savings = round(competitor_delivery - quick_delivery, 2)
         if savings > 0:
             cheaper = "quick"
         elif savings < 0:
             cheaper = "competitor"
         else:
             cheaper = "tie"
+    region_id, region_name = _region_fields(row.city_name, row.city_name_ar or "")
+    competitor_name = (row.competitor_name or META_COMPETITOR_NAME).strip() or META_COMPETITOR_NAME
     return {
         "id": str(row.id),
+        "pricing_city_id": str(row.id),
         "city_key": row.city_key,
         "city_name": row.city_name,
         "city_name_ar": row.city_name_ar or "",
+        "region_id": region_id or None,
+        "region": region_name,
         "delivery_delay": (row.delivery_delay or "").strip() or None,
         "quick_delivery_price": quick_delivery,
         "quick_retour_price": QUICK_RETOUR_PRICE,
         "quick_refus_price": QUICK_REFUS_PRICE,
-        "competitor_name": (row.competitor_name or DEFAULT_COMPETITOR_NAME).strip() or DEFAULT_COMPETITOR_NAME,
+        "competitor_name": competitor_name,
         "competitor_delivery_price": competitor_delivery,
         "competitor_retour_price": competitor_retour,
+        "meta_delivery_fee": competitor_delivery,
+        "quick_covered": True,
+        "meta_covered": competitor_delivery is not None,
         "quick_total": quick_total,
         "competitor_total": competitor_total,
         "savings": savings,
@@ -257,7 +279,7 @@ def seed_quick_cities(session: Session, path: Path | None = None) -> dict[str, A
         competitor_delivery = (
             _money(matched.delivery_fee, DEFAULT_COMPETITOR_DELIVERY) if matched else DEFAULT_COMPETITOR_DELIVERY
         )
-        competitor_name = META_COMPETITOR_NAME if matched else DEFAULT_COMPETITOR_NAME
+        competitor_name = META_COMPETITOR_NAME
         row = existing.get(city_key)
         if row is None:
             row = DeliveryCity(

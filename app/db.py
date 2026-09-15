@@ -39,6 +39,7 @@ ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier varchar(50) DEFAULT 'meta_livraison' NOT NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier_status varchar(50)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatched_at timestamptz",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_cost double precision",
     "CREATE INDEX IF NOT EXISTS ix_orders_carrier ON orders (carrier)",
     "CREATE INDEX IF NOT EXISTS ix_orders_created_at ON orders (created_at)",
     "CREATE INDEX IF NOT EXISTS ix_orders_confirmed_at ON orders (confirmed_at)",
