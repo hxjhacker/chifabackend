@@ -26,8 +26,8 @@ class ForceLogCarrier(ShippingCarrierBase):
             "raw": {"api_url": FORCELOG_API_URL},
         }
 
-    async def get_tracking_status(self, tracking_number: str) -> dict[str, Any]:
-        _ = tracking_number
+    async def get_tracking_status(self, tracking_number: str, **kwargs: Any) -> dict[str, Any]:
+        _ = tracking_number, kwargs
         return {
             "ok": False,
             "status": "",

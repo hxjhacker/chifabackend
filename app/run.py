@@ -103,11 +103,12 @@ async def _pipe(src: asyncio.StreamReader, dst: asyncio.StreamWriter) -> None:
                 break
             dst.write(data)
             await dst.drain()
-    except (ConnectionError, asyncio.CancelledError, ssl.SSLError):
+    except (ConnectionError, asyncio.CancelledError, ssl.SSLError, OSError):
         pass
     finally:
         try:
-            dst.close()
+            if not dst.is_closing():
+                dst.close()
             await dst.wait_closed()
         except Exception:
             pass
@@ -126,24 +127,26 @@ async def _streams(sock: socket.socket, tls_ctx: ssl.SSLContext | None = None):
     return reader, writer
 
 
+_GATE_SESSIONS: set[asyncio.Task] = set()
+
+
 async def _session(client: socket.socket, tls_ctx: ssl.SSLContext | None) -> None:
     loop = asyncio.get_running_loop()
+    writer = None
+    inner_w = None
     try:
         await loop.run_in_executor(None, _strip_proxy, client)
         peek = await loop.run_in_executor(None, lambda: _peek(client, 16))
         if not peek:
-            client.close()
             return
         is_tls = peek[:1] == b"\x16"
         if peek.startswith(b"PRI "):
             print("[GATE] HTTP/2 preface — disable HTTP/2 to origin in Cloudflare/Easypanel", flush=True)
-            client.close()
             return
         if is_tls:
             print("[GATE] TLS ClientHello — terminating locally", flush=True)
             if tls_ctx is None:
                 print("[GATE] no TLS cert; set Easypanel domain scheme to HTTP", flush=True)
-                client.close()
                 return
         else:
             method = peek.split(b" ", 1)[0].decode("ascii", "replace")
@@ -152,13 +155,36 @@ async def _session(client: socket.socket, tls_ctx: ssl.SSLContext | None) -> Non
         client.setblocking(False)
         reader, writer = await _streams(client, tls_ctx if is_tls else None)
         inner_r, inner_w = await asyncio.open_connection(INNER_HOST, INNER_PORT)
-        await asyncio.gather(_pipe(reader, inner_w), _pipe(inner_r, writer))
+        await asyncio.gather(_pipe(reader, inner_w), _pipe(inner_r, writer), return_exceptions=True)
+    except asyncio.CancelledError:
+        print("[GATE] session cancelled", flush=True)
+        raise
     except Exception as exc:
         print(f"[GATE] session error: {type(exc).__name__}: {exc}", flush=True)
+    finally:
+        for stream in (inner_w, writer):
+            if stream is None:
+                continue
+            try:
+                if not stream.is_closing():
+                    stream.close()
+                await stream.wait_closed()
+            except Exception:
+                pass
         try:
             client.close()
         except Exception:
             pass
+
+
+def _forget_gate_session(task: asyncio.Task) -> None:
+    _GATE_SESSIONS.discard(task)
+    try:
+        exc = task.exception()
+    except (asyncio.CancelledError, asyncio.InvalidStateError):
+        return
+    if exc:
+        print(f"[GATE] session task failed: {type(exc).__name__}: {exc}", flush=True)
 
 
 async def _accept(tls_ctx: ssl.SSLContext | None) -> None:
@@ -169,10 +195,23 @@ async def _accept(tls_ctx: ssl.SSLContext | None) -> None:
     sock.setblocking(False)
     loop = asyncio.get_running_loop()
     print(f"[GATE] listening on {OUTER_HOST}:{OUTER_PORT} -> {INNER_HOST}:{INNER_PORT}", flush=True)
-    while True:
-        client, addr = await loop.sock_accept(sock)
-        print(f"[GATE] accept {addr[0]}:{addr[1]}", flush=True)
-        asyncio.create_task(_session(client, tls_ctx))
+    try:
+        while True:
+            client, addr = await loop.sock_accept(sock)
+            print(f"[GATE] accept {addr[0]}:{addr[1]}", flush=True)
+            task = asyncio.create_task(_session(client, tls_ctx), name=f"gate-{addr[0]}-{addr[1]}")
+            _GATE_SESSIONS.add(task)
+            task.add_done_callback(_forget_gate_session)
+    finally:
+        pending = list(_GATE_SESSIONS)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        try:
+            sock.close()
+        except Exception:
+            pass
 
 
 async def _wait_inner() -> None:

@@ -35,7 +35,8 @@ class MetaLivraisonCarrier(ShippingCarrierBase):
             "raw": result,
         }
 
-    async def get_tracking_status(self, tracking_number: str) -> dict[str, Any]:
+    async def get_tracking_status(self, tracking_number: str, **kwargs: Any) -> dict[str, Any]:
+        _ = kwargs
         result = get_order_status_from_meta(tracking_number)
         status = str(result.get("status") or "") if result.get("ok") else ""
         return {

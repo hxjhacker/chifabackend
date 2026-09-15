@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+import unicodedata
+from typing import Any, Sequence
+from urllib.parse import quote
 
 import httpx
 from sqlmodel import Session, select
@@ -394,9 +396,9 @@ def _tracking_from(payload: Any) -> str:
 def _status_from(payload: Any) -> str:
     if not isinstance(payload, dict):
         return str(payload or "")
-    for key in ("status", "etat", "state", "statut", "parcel_status", "last_status"):
+    for key in ("status", "etat", "state", "statut", "parcel_status", "last_status", "message", "error"):
         value = payload.get(key)
-        if value not in (None, ""):
+        if value not in (None, "", False, True):
             if isinstance(value, dict):
                 return str(value.get("name") or value.get("label") or value.get("code") or "")
             return str(value)
@@ -406,15 +408,73 @@ def _status_from(payload: Any) -> str:
     return ""
 
 
+def _payload_blob(payload: Any) -> str:
+    if isinstance(payload, dict):
+        parts = [str(payload.get(key) or "") for key in ("message", "error", "status", "success", "text", "detail")]
+        nested = payload.get("data")
+        if nested not in (None, ""):
+            parts.append(str(nested))
+        return " ".join(parts).casefold()
+    return str(payload or "").casefold()
+
+
+def _parcel_missing(payload: Any) -> bool:
+    blob = _payload_blob(payload)
+    return any(
+        token in blob
+        for token in (
+            "colis non existant",
+            "non existant",
+            "does not exist",
+            "not found",
+            "not exist",
+            "inconnu",
+            "introuvable",
+        )
+    )
+
+
+def tracking_lookup_codes(tracking_number: str, extra_codes: Sequence[str] | None = None) -> list[str]:
+    """Quick barcode is numeric. Stored values like PARCEL_89947944 must be stripped."""
+    raw = str(tracking_number or "").strip()
+    codes: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            return
+        seen.add(text)
+        codes.append(text)
+
+    add(raw)
+    upper = raw.upper()
+    if upper.startswith("PARCEL_"):
+        add(raw.split("_", 1)[-1].strip())
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if digits:
+        add(digits)
+    for item in extra_codes or ():
+        add(item)
+    return codes
+
+
 def normalize_quick_status(raw: str) -> str | None:
-    folded = (raw or "").casefold().replace("-", " ").replace("_", " ")
+    folded = unicodedata.normalize("NFKD", raw or "")
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    folded = folded.casefold().replace("-", " ").replace("_", " ")
     if not folded:
+        return None
+    if _parcel_missing(raw):
         return None
     if any(token in folded for token in ("retour", "return", "مرتجع")):
         return "returned"
     if any(token in folded for token in ("annul", "cancel", "refus", "ملغ")):
         return "cancelled"
-    if any(token in folded for token in ("livre", "delivered", "تم التسليم", "تم التوصيل")):
+    if any(
+        token in folded
+        for token in ("livre", "delivered", "paye", "paid", "تم التسليم", "تم التوصيل")
+    ):
         return "delivered"
     if any(token in folded for token in ("ship", "cours", "ramass", "transit", "expedi", "قيد الشحن", "distribution")):
         return "in_shipping"
@@ -780,18 +840,46 @@ class QuickLivraisonCarrier(ShippingCarrierBase):
             payload["code"] = str(code)
         return await self.create_stock_delivery(payload, order=order)
 
-    async def get_tracking_status(self, tracking_number: str) -> dict[str, Any]:
-        code = str(tracking_number or "").strip()
-        if not code:
+    async def get_tracking_status(self, tracking_number: str, **kwargs: Any) -> dict[str, Any]:
+        extra = kwargs.get("extra_codes")
+        extras = extra if isinstance(extra, (list, tuple)) else ()
+        codes = tracking_lookup_codes(tracking_number, extras)
+        if not codes:
             return {"ok": False, "status": "", "raw": "", "error": "missing_tracking_code", "carrier": self.carrier_id}
-        payload = await self._get(f"/getParcelDetails/{code}")
-        raw = _status_from(payload)
-        status = normalize_quick_status(raw)
+        last_raw = ""
+        last_error = "unknown_status"
+        for code in codes:
+            try:
+                payload = await self._get(f"/getParcelDetails/{quote(code, safe='-_')}")
+            except httpx.TimeoutException:
+                last_error = "quick_timeout"
+                last_raw = last_raw or "timeout"
+                continue
+            except httpx.HTTPError as exc:
+                last_error = str(exc) or "quick_tracking_failed"
+                continue
+            if _parcel_missing(payload):
+                last_raw = _status_from(payload) or "Colis non existant"
+                last_error = "unknown_status"
+                continue
+            raw = _status_from(payload)
+            status = normalize_quick_status(raw)
+            if status:
+                return {
+                    "ok": True,
+                    "status": status,
+                    "raw": raw,
+                    "error": "",
+                    "carrier": self.carrier_id,
+                    "lookup_code": code,
+                }
+            last_raw = raw or last_raw
+            last_error = "unknown_status"
         return {
-            "ok": bool(status),
-            "status": status or "",
-            "raw": raw,
-            "error": "" if status else "unknown_status",
+            "ok": False,
+            "status": "",
+            "raw": last_raw,
+            "error": last_error,
             "carrier": self.carrier_id,
         }
 

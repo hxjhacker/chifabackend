@@ -1281,12 +1281,25 @@ def admin_bulk_livraison(
 
 
 @router.post("/orders/sync-tracking")
-def admin_sync_tracking(admin: dict = Depends(get_current_admin)):
+async def admin_sync_tracking(admin: dict = Depends(get_current_admin)):
     _ = admin
-    from app.services.tracking_sync import sync_shipped_orders
+    from app.services.tracking_sync import sync_shipped_orders_async
 
-    report = sync_shipped_orders()
-    return report
+    try:
+        return await sync_shipped_orders_async()
+    except Exception as exc:
+        print(f"[TRACKING_SYNC_ERROR] {traceback.format_exc()}", flush=True)
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "ok": False,
+                "detail": str(exc) or "تعذر تحديث حالات الشحن.",
+                "total_checked": 0,
+                "updated_count": 0,
+                "details": [],
+            },
+        )
 
 
 @router.post("/orders/bulk-labels")

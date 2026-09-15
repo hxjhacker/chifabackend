@@ -16,7 +16,7 @@ class ShippingCarrierBase(ABC):
         """Creates shipment on carrier and returns dict with tracking_number and details."""
 
     @abstractmethod
-    async def get_tracking_status(self, tracking_number: str) -> dict[str, Any]:
+    async def get_tracking_status(self, tracking_number: str, **kwargs: Any) -> dict[str, Any]:
         """Returns normalized status: 'in_shipping', 'delivered', 'returned', 'cancelled'."""
 
     @abstractmethod
