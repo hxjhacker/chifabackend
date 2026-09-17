@@ -90,6 +90,7 @@ PACK_NAMES = {
     "zit_alfasokh": "زيت الفسوخ",
     "alkhatm_alrijali": "الخاتم الرجالي",
     "almisk_alabyad": "المسك الأبيض",
+    "pack-royal-power": "الباك الملكي",
 }
 
 

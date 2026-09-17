@@ -16,6 +16,7 @@ PACK_NAMES = {
     "almisk_alabyad": "المسك الأبيض",
     "kids": "USB تعليم الأطفال",
     "educative": "الفلاشة التعليمية الذكية",
+    "pack-royal-power": "الباك الملكي",
 }
 
 

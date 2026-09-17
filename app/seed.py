@@ -93,6 +93,20 @@ CATALOG = [
         "stock_quantity": 22,
         "default_price_cents": 19900,
     },
+    {
+        "slug": "pack-royal-power",
+        "code": "PACK_ROYAL",
+        "name_ar": "الباك الملكي",
+        "name_en": "Royal Power Pack",
+        "tagline_ar": "الزيت الملكي + العسل الملكي بالأعشاب — طاقة وصلابة طبيعية.",
+        "description_ar": "باك رجالي: زيت ملكي للتدليك الخارجي وعسل ملكي بالأعشاب للاستعمال اليومي. تغليف سري والدفع عند الاستلام.",
+        "accent": "emerald",
+        "category": "standard",
+        "is_quick_stock": False,
+        "quick_product_id": None,
+        "stock_quantity": 999,
+        "default_price_cents": 29900,
+    },
 ]
 
 KEEP_SLUGS = {item["slug"] for item in CATALOG}

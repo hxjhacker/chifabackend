@@ -1,12 +1,14 @@
 TIER_PRICE_CENTS = {1: 19900, 2: 27900, 3: 34900}
 EDUCATIVE_TIER_PRICE_CENTS = {1: 14900, 2: 24900, 3: 32900}
+ROYAL_PACK_TIER_PRICE_CENTS = {1: 19900, 2: 29900, 3: 34900}
 CROSS_SELL_CENTS = 19900
 UPSELL_CENTS = 9900
 CURRENCY = "MAD"
 CORE_PRODUCT_SLUGS = ("quran", "taalim", "music")
 QUICK_STOCK_SLUGS = ("zit_alfasokh", "alkhatm_alrijali", "almisk_alabyad")
-LEGACY_PRODUCT_SLUGS = {"kids": "taalim", "educative": "taalim"}
-PRODUCT_SLUGS = (*CORE_PRODUCT_SLUGS, *QUICK_STOCK_SLUGS, *LEGACY_PRODUCT_SLUGS)
+ROYAL_PACK_SLUG = "pack-royal-power"
+LEGACY_PRODUCT_SLUGS = {"kids": "taalim", "educative": "taalim", "pack-royal": ROYAL_PACK_SLUG}
+PRODUCT_SLUGS = (*CORE_PRODUCT_SLUGS, *QUICK_STOCK_SLUGS, *LEGACY_PRODUCT_SLUGS, ROYAL_PACK_SLUG)
 
 
 def canonical_product_slug(slug: str) -> str:
@@ -19,8 +21,11 @@ def cents_to_mad(cents: int) -> float:
 
 
 def tier_prices_for(product_slug: str) -> dict[int, int]:
-    if product_slug in LEGACY_PRODUCT_SLUGS:
+    token = canonical_product_slug(product_slug)
+    if product_slug in ("kids", "educative"):
         return EDUCATIVE_TIER_PRICE_CENTS
+    if token == ROYAL_PACK_SLUG:
+        return ROYAL_PACK_TIER_PRICE_CENTS
     return TIER_PRICE_CENTS
 
 

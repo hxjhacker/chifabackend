@@ -17,6 +17,7 @@ PROTECTED_SLUGS = {
     "zit_alfasokh",
     "alkhatm_alrijali",
     "almisk_alabyad",
+    "pack-royal-power",
 }
 
 
