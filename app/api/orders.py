@@ -14,11 +14,11 @@ from app.services.phone import normalize_ma_phone, to_national
 from app.services.pricing import (
     CROSS_SELL_CENTS,
     PRODUCT_SLUGS,
-    TIER_PRICE_CENTS,
     UPSELL_CENTS,
     canonical_product_slug,
     cents_to_mad,
     compute_subtotal,
+    tier_prices_for,
 )
 from app.services.push import notify_new_order
 from app.services.sheets import product_name_ar, push_order_to_sheets
@@ -113,12 +113,12 @@ def create_order(
     if len(customer_city_raw) < 2:
         raise HTTPException(status_code=422, detail="invalid_city")
 
-    if payload.tier_qty not in TIER_PRICE_CENTS:
-        raise HTTPException(status_code=422, detail="invalid_tier")
     if payload.product_slug not in PRODUCT_SLUGS:
         raise HTTPException(status_code=422, detail="invalid_product")
 
     product_slug = canonical_product_slug(payload.product_slug)
+    if payload.tier_qty not in tier_prices_for(payload.product_slug):
+        raise HTTPException(status_code=422, detail="invalid_tier")
     product = session.exec(select(Product).where(Product.slug == product_slug)).first()
     if not product or not product.is_active:
         raise HTTPException(status_code=404, detail="product_not_found")
@@ -127,6 +127,8 @@ def create_order(
     if payload.cross_sell_slug:
         if cross_slug == product_slug or payload.cross_sell_slug not in PRODUCT_SLUGS:
             raise HTTPException(status_code=422, detail="invalid_cross_sell")
+        if product_slug == "pack-royal-power":
+            raise HTTPException(status_code=422, detail="cross_sell_not_available")
 
     existing = session.exec(select(Order).where(Order.event_id == payload.event_id)).first()
     if existing:

@@ -292,14 +292,9 @@ def _pack_name(slug: str | None, session: Session | None = None) -> str:
 
 
 def _pack_label(order: Order, session: Session | None = None) -> str:
-    royal = {
-        1: "الزيت الملكي",
-        2: "الباك الملكي (زيت + عسل)",
-        3: "الباك الملكي المضاعف (2 زيت + 2 عسل)",
-    }
     slug = str(order.product_slug or "").strip()
     qty = int(order.tier_qty or 1)
-    primary = royal.get(qty) if slug == "pack-royal-power" else f"{_pack_name(slug, session)} × {qty}"
+    primary = _pack_name(slug, session) if slug == "pack-royal-power" else f"{_pack_name(slug, session)} × {qty}"
     parts = [primary]
     if order.cross_sell_slug:
         parts.append(_pack_name(order.cross_sell_slug, session))
