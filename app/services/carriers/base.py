@@ -17,7 +17,7 @@ class ShippingCarrierBase(ABC):
 
     @abstractmethod
     async def get_tracking_status(self, tracking_number: str, **kwargs: Any) -> dict[str, Any]:
-        """Returns normalized status: 'in_shipping', 'delivered', 'returned', 'cancelled'."""
+        """Returns a normalized provider status, including out_of_zone and confirmed."""
 
     @abstractmethod
     async def cancel_shipment(self, tracking_number: str) -> bool:

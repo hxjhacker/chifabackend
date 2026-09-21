@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import re
+import unicodedata
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -17,7 +19,61 @@ PUBLIC_TO_DB = {
     "returned": "returned",
     "cancelled": "cancelled",
     "in_shipping": "shipped",
+    "out_of_zone": "out_of_zone",
+    "confirmed": "confirmed",
 }
+
+
+def _fold_tracking_status(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.casefold().replace("-", " ").replace("_", " ").replace("/", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_tracking_status(raw: Any) -> str | None:
+    """Normalize carrier status text to the dashboard's database status keys."""
+    folded = _fold_tracking_status(raw)
+    if not folded:
+        return None
+
+    if any(
+        token in folded
+        for token in (
+            "out of delivery area",
+            "out of zone",
+            "hors zone",
+            "zone non couverte",
+            "non desservi",
+            "خارج منطقة التوصيل",
+        )
+    ):
+        return "out_of_zone"
+    if any(token in folded for token in ("retour", "returned", "return", "echec", "échec", "مرتجع")):
+        return "returned"
+    if any(token in folded for token in ("annul", "canceled", "cancelled", "refus", "ملغ")):
+        return "cancelled"
+    if any(
+        token in folded
+        for token in (
+            "in transit",
+            "in shipping",
+            "shipped",
+            "en cours de livraison",
+            "en cours",
+            "ramasse",
+            "ramass",
+            "قيد الشحن",
+        )
+    ):
+        return "shipped"
+    if any(token in folded for token in ("non livre", "pas livre", "not delivered")):
+        return "shipped"
+    if any(token in folded for token in ("delivered", "livre", "recu", "received", "تم التسليم", "تم التوصيل")):
+        return "delivered"
+    if any(token in folded for token in ("confirmed", "confirm", "valide", "valid", "تم التأكيد")):
+        return "confirmed"
+    return PUBLIC_TO_DB.get(folded)
 
 
 def _apply_status(order: Order, next_status: str) -> None:
@@ -25,7 +81,9 @@ def _apply_status(order: Order, next_status: str) -> None:
     order.status = next_status
     order.updated_at = now
     order.carrier_status = next_status
-    if next_status in ("shipped", "delivered", "returned") and not getattr(order, "shipped_at", None):
+    if next_status in ("confirmed", "shipped", "out_of_zone", "delivered", "returned") and not getattr(order, "confirmed_at", None):
+        order.confirmed_at = now
+    if next_status in ("shipped", "out_of_zone", "delivered", "returned") and not getattr(order, "shipped_at", None):
         order.shipped_at = now
     if next_status == "delivered":
         if not getattr(order, "delivered_at", None):
@@ -39,9 +97,15 @@ def _apply_status(order: Order, next_status: str) -> None:
     elif next_status == "returned":
         order.delivered_at = None
         order.cancelled_at = None
-    elif next_status == "shipped":
+    elif next_status in ("shipped", "out_of_zone"):
         order.delivered_at = None
         order.cancelled_at = None
+    elif next_status == "confirmed":
+        order.shipped_at = None
+        order.delivered_at = None
+        order.cancelled_at = None
+    elif next_status == "cancelled":
+        order.delivered_at = None
 
 
 def _cfg_reference(order: Order) -> str:
@@ -51,7 +115,7 @@ def _cfg_reference(order: Order) -> str:
 def _load_sync_jobs() -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
     with Session(engine) as session:
-        rows = session.exec(select(Order).where(Order.status.in_(("shipped", "in_shipping")))).all()
+        rows = session.exec(select(Order).where(Order.meta_livraison_code.is_not(None))).all()
         tracked = [order for order in rows if str(getattr(order, "meta_livraison_code", "") or "").strip()]
         for order in tracked[:MAX_SYNC]:
             stored = str(order.meta_livraison_code or "").strip()
@@ -156,8 +220,10 @@ async def sync_shipped_orders_async() -> dict[str, Any]:
                 }
             )
             continue
-        public = str(result.get("status") or "") if result.get("ok") else ""
-        db_status = PUBLIC_TO_DB.get(public)
+        raw_status = ""
+        if result.get("ok"):
+            raw_status = result.get("raw") or result.get("status") or ""
+        db_status = normalize_tracking_status(raw_status)
         current = str(job["from_status"])
         item = {
             "order_id": job["order_id"],

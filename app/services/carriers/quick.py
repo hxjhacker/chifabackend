@@ -491,13 +491,29 @@ def normalize_quick_status(raw: str) -> str | None:
         return None
     if _parcel_missing(raw):
         return None
-    if any(token in folded for token in ("retour", "return", "مرتجع")):
+    if any(
+        token in folded
+        for token in (
+            "out of delivery area",
+            "out of zone",
+            "hors zone",
+            "zone non couverte",
+            "non desservi",
+            "خارج منطقة التوصيل",
+        )
+    ):
+        return "out_of_zone"
+    if any(token in folded for token in ("retour", "return", "echec", "échec", "مرتجع")):
         return "returned"
     if any(token in folded for token in ("annul", "cancel", "refus", "ملغ")):
         return "cancelled"
+    if any(token in folded for token in ("confirm", "valid", "تم التأكيد")):
+        return "confirmed"
+    if any(token in folded for token in ("non livre", "pas livre", "not delivered")):
+        return "in_shipping"
     if any(
         token in folded
-        for token in ("livre", "delivered", "paye", "paid", "تم التسليم", "تم التوصيل")
+        for token in ("livre", "delivered", "recu", "received", "paye", "paid", "تم التسليم", "تم التوصيل")
     ):
         return "delivered"
     if any(token in folded for token in ("ship", "cours", "ramass", "transit", "expedi", "قيد الشحن", "distribution")):

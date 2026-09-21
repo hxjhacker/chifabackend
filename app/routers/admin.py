@@ -51,17 +51,18 @@ from app.utils.regions import region_id_for_city
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-AdminStatus = Literal["new", "confirmed", "shipped", "delivered", "returned", "cancelled"]
+AdminStatus = Literal["new", "confirmed", "shipped", "delivered", "returned", "cancelled", "out_of_zone"]
 
 NEW_EQUIV = ("pending", "upsell_accepted", "new")
-ALLOWED_STATUSES: tuple[str, ...] = ("new", "confirmed", "shipped", "delivered", "returned", "cancelled")
+ALLOWED_STATUSES: tuple[str, ...] = ("new", "confirmed", "shipped", "delivered", "returned", "cancelled", "out_of_zone")
 STATUS_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "new": ("confirmed", "cancelled"),
-    "confirmed": ("shipped", "cancelled"),
-    "shipped": ("delivered", "returned", "cancelled"),
+    "confirmed": ("shipped", "out_of_zone", "cancelled"),
+    "shipped": ("delivered", "returned", "out_of_zone", "cancelled"),
     "delivered": (),
     "returned": (),
     "cancelled": ("new", "confirmed"),
+    "out_of_zone": ("shipped", "returned", "cancelled"),
 }
 REGION_IDS = tuple(f"MA{i:02d}" for i in range(1, 13))
 
@@ -407,9 +408,9 @@ def _stamp_status(order: Order, status_value: str, cols: set[str] | None = None)
         _assign(order, known, "delivered_at", None)
         _assign(order, known, "cancelled_at", None)
         return
-    if status_value in ("confirmed", "shipped", "delivered", "returned") and not order.confirmed_at:
+    if status_value in ("confirmed", "shipped", "delivered", "returned", "out_of_zone") and not order.confirmed_at:
         _assign(order, known, "confirmed_at", now)
-    if status_value in ("shipped", "delivered", "returned") and not order.shipped_at:
+    if status_value in ("shipped", "delivered", "returned", "out_of_zone") and not order.shipped_at:
         _assign(order, known, "shipped_at", now)
     if status_value == "delivered" and not order.delivered_at:
         _assign(order, known, "delivered_at", now)
@@ -421,7 +422,7 @@ def _stamp_status(order: Order, status_value: str, cols: set[str] | None = None)
     if status_value == "confirmed":
         _assign(order, known, "shipped_at", None)
         _assign(order, known, "delivered_at", None)
-    elif status_value in ("shipped", "returned"):
+    elif status_value in ("shipped", "returned", "out_of_zone"):
         _assign(order, known, "delivered_at", None)
 
 
@@ -776,7 +777,7 @@ def admin_stats(
             new_orders += 1
         elif display == "confirmed":
             confirmed += 1
-        elif display == "shipped":
+        elif display in ("shipped", "out_of_zone"):
             shipped += 1
         elif display == "delivered":
             delivered += 1

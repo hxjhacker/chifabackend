@@ -18,7 +18,7 @@ from app.services.quick_pricing import QUICK_REFUS_PRICE, QUICK_RETOUR_PRICE, _m
 from app.services.regions import REGION_ID_TO_NAME, REGION_IDS, region_id_for_city
 
 NEW_EQUIV = ("pending", "upsell_accepted", "new")
-ALLOWED_STATUSES = ("new", "confirmed", "shipped", "delivered", "returned", "cancelled")
+ALLOWED_STATUSES = ("new", "confirmed", "shipped", "delivered", "returned", "cancelled", "out_of_zone")
 TOP_CITIES_LIMIT = 5
 
 
@@ -26,7 +26,7 @@ def _display_status(raw: str) -> str:
     value = (raw or "pending").strip()
     if value in NEW_EQUIV:
         return "new"
-    if value == "in_shipping":
+    if value in ("in_shipping", "out_of_zone"):
         return "shipped"
     if value in ALLOWED_STATUSES:
         return value

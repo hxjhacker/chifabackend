@@ -463,15 +463,29 @@ def _fold_status(value: str) -> str:
 
 
 def normalize_meta_status(raw: str) -> str | None:
-    """Map a Meta Livraison etat string to delivered | returned | cancelled | in_shipping."""
+    """Map a Meta Livraison etat string to a dashboard status key."""
     folded = _fold_status(raw)
     if not folded:
         return None
     compact = folded.replace(" ", "_")
-    if any(token in folded for token in ("retour", "return", "مرتجع")):
+    if any(
+        token in folded
+        for token in (
+            "out of delivery area",
+            "out of zone",
+            "hors zone",
+            "zone non couverte",
+            "non desservi",
+            "خارج منطقة التوصيل",
+        )
+    ):
+        return "out_of_zone"
+    if any(token in folded for token in ("retour", "return", "echec", "échec", "مرتجع")):
         return "returned"
     if any(token in folded for token in ("annul", "refus", "cancel", "ملغ")):
         return "cancelled"
+    if any(token in folded for token in ("confirm", "valid", "تم التأكيد")):
+        return "confirmed"
     if compact in {"en_cours", "expedie", "expediee", "in_shipping"}:
         return "in_shipping"
     if any(
@@ -481,7 +495,7 @@ def normalize_meta_status(raw: str) -> str | None:
         return "in_shipping"
     if any(token in folded for token in ("non livre", "pas livre", "not delivered")):
         return "in_shipping"
-    if compact in {"livre", "livree", "delivered", "delivre"}:
+    if compact in {"livre", "livree", "delivered", "delivre", "recu", "received"}:
         return "delivered"
     if re.search(r"(^|[^a-z])livr[eé]e?([^a-z]|$)", folded) or any(
         token in folded for token in ("تم التوصيل", "تم التسليم")
