@@ -1,8 +1,9 @@
-"""Accept HTTP, TLS, or PROXY protocol on :8000 and forward HTTP/1.1 to uvicorn."""
+"""Start FastAPI on Easypanel's PORT, with an optional legacy edge gateway."""
 
 from __future__ import annotations
 
 import asyncio
+import os
 import socket
 import ssl
 import subprocess
@@ -12,10 +13,38 @@ from pathlib import Path
 
 import uvicorn
 
-INNER_HOST = "127.0.0.1"
-INNER_PORT = 8001
-OUTER_HOST = "0.0.0.0"
-OUTER_PORT = 8000
+
+def _port_from_env(name: str, default: int) -> int:
+    """Read a valid TCP port without allowing bad deployment env to crash startup."""
+    try:
+        value = int(os.environ.get(name, str(default)).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if 1 <= value <= 65535 else default
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Easypanel/Docker exposes PORT as the port the process must serve.
+PUBLIC_PORT = _port_from_env("PORT", 8000)
+PUBLIC_HOST = "0.0.0.0"
+
+# The legacy TLS/PROXY gateway needs a separate backend socket. It is disabled
+# by default so the normal deployment runs Uvicorn directly on PORT.
+GATEWAY_ENABLED = _env_flag("ENABLE_GATEWAY")
+INNER_HOST = "0.0.0.0"
+INNER_CONNECT_HOST = "127.0.0.1"
+INNER_PORT = _port_from_env(
+    "UVICORN_INNER_PORT",
+    PUBLIC_PORT + 1 if PUBLIC_PORT < 65535 else 8001,
+)
+OUTER_HOST = PUBLIC_HOST
+OUTER_PORT = PUBLIC_PORT
 PROXY_V2_SIG = b"\r\n\r\n\x00\r\nQUIT\n"
 
 
@@ -154,7 +183,7 @@ async def _session(client: socket.socket, tls_ctx: ssl.SSLContext | None) -> Non
 
         client.setblocking(False)
         reader, writer = await _streams(client, tls_ctx if is_tls else None)
-        inner_r, inner_w = await asyncio.open_connection(INNER_HOST, INNER_PORT)
+        inner_r, inner_w = await asyncio.open_connection(INNER_CONNECT_HOST, INNER_PORT)
         await asyncio.gather(_pipe(reader, inner_w), _pipe(inner_r, writer), return_exceptions=True)
     except asyncio.CancelledError:
         print("[GATE] session cancelled", flush=True)
@@ -217,7 +246,7 @@ async def _accept(tls_ctx: ssl.SSLContext | None) -> None:
 async def _wait_inner() -> None:
     for _ in range(100):
         try:
-            _, w = await asyncio.open_connection(INNER_HOST, INNER_PORT)
+            _, w = await asyncio.open_connection(INNER_CONNECT_HOST, INNER_PORT)
             w.close()
             await w.wait_closed()
             return
@@ -227,6 +256,23 @@ async def _wait_inner() -> None:
 
 
 async def _amain() -> None:
+    if not GATEWAY_ENABLED:
+        print(f"[API] starting Uvicorn on {PUBLIC_HOST}:{PUBLIC_PORT}", flush=True)
+        config = uvicorn.Config(
+            "app.main:app",
+            host=PUBLIC_HOST,
+            port=PUBLIC_PORT,
+            http="h11",
+            proxy_headers=True,
+            forwarded_allow_ips="*",
+            access_log=True,
+            log_level="info",
+            timeout_keep_alive=30,
+            server_header=True,
+        )
+        await uvicorn.Server(config).serve()
+        return
+
     tls_ctx = _make_tls_context()
     config = uvicorn.Config(
         "app.main:app",
