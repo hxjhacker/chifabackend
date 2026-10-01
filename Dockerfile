@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     ADMIN_JWT_HOURS=12
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl \
+    && apt-get install -y --no-install-recommends openssl fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

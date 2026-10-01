@@ -109,6 +109,8 @@ def _font_files() -> list[tuple[Path, Path]]:
     folder = Path(__file__).resolve().parent.parent / "assets" / "fonts"
     return [
         (folder / "Amiri-Regular.ttf", folder / "Amiri-Bold.ttf"),
+        (Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"), Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf")),
+        (Path("/usr/share/fonts/opentype/noto/NotoSansArabic-Regular.ttf"), Path("/usr/share/fonts/opentype/noto/NotoSansArabic-Bold.ttf")),
         (Path("C:/Windows/Fonts/tahoma.ttf"), Path("C:/Windows/Fonts/tahomabd.ttf")),
         (Path("C:/Windows/Fonts/arial.ttf"), Path("C:/Windows/Fonts/arialbd.ttf")),
         (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),
@@ -601,9 +603,8 @@ def _draw_quick(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) 
     mid = (left + right) / 2
     c.line(left, flags_y, right, flags_y)
     c.line(mid, flags_y, mid, grid_y)
-    c.setFont("Helvetica-Bold", 8)
     open_text = "Autorisé à ouvrir" if _can_open(order) else "Interdit d'ouvrir"
-    c.drawCentredString((left + mid) / 2, flags_y + 2.4 * mm, open_text)
+    _draw_text(c, open_text, (left + mid) / 2, flags_y + 2.4 * mm, 8, bold=True, align="center")
     c.drawCentredString((mid + right) / 2, flags_y + 2.4 * mm, "Interdit d'essayer")
 
     goods_h = 16.5 * mm
