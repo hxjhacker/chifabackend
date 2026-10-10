@@ -80,6 +80,7 @@ class Order(SQLModel, table=True):
     carrier_status: str | None = Field(default=None, max_length=50)
     dispatched_at: datetime | None = Field(default=None)
     shipping_cost: float | None = Field(default=None)
+    assigned_team_member_id: str = Field(default="mohammed", max_length=64, index=True)
 
     items: list["OrderItem"] = Relationship(back_populates="order")
 

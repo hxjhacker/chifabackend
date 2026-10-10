@@ -367,6 +367,7 @@ def _serialize_order(order: Order, session: Session | None = None) -> dict:
         "total_price": cents_to_mad(order.total_cents),
         "customer_name": order.full_name,
         "source": getattr(order, "source", None),
+        "assigned_team_member_id": getattr(order, "assigned_team_member_id", "mohammed"),
         "updated_at": _iso(getattr(order, "updated_at", None)),
         "confirmed_at": _iso(getattr(order, "confirmed_at", None)),
         "shipped_at": _iso(getattr(order, "shipped_at", None)),
@@ -705,6 +706,9 @@ def apply_order_update(
             _assign(order, known, "bundle_enabled", True)
     if "cross_sell_price_mad" in data and data["cross_sell_price_mad"] is not None:
         _assign(order, known, "cross_sell_price_cents", int(round(float(data["cross_sell_price_mad"]) * 100)))
+    if "assigned_team_member_id" in data:
+        member_id = str(data["assigned_team_member_id"] or "").strip()[:64] or "mohammed"
+        _assign(order, known, "assigned_team_member_id", member_id)
     _assign(order, known, "updated_at", datetime.now(timezone.utc))
     next_status = _display_status(str(getattr(order, "status", current_status) or current_status))
     if next_status == "confirmed" and current_status != "confirmed" and not _has_complete_confirm_details(order):
@@ -1107,6 +1111,7 @@ def admin_create_order(
         cross = None
     bundle = bool(body.get("bundle_enabled")) and bool(cross)
     secondary_qty = max(1, min(20, int(body.get("secondary_qty") or 1)))
+    assigned_team_member_id = str(body.get("assigned_team_member_id") or "mohammed").strip()[:64] or "mohammed"
     address = str(body.get("address") or body.get("full_address") or "").strip() or None
     notes = str(body.get("courier_notes") or body.get("driver_comment") or "").strip() or None
     shipping = str(body.get("shipping_city") or "").strip()[:160] or None
@@ -1130,6 +1135,7 @@ def admin_create_order(
         status=status_value,
         event_id=f"admin-{order_id}",
         source="admin",
+        assigned_team_member_id=assigned_team_member_id,
         updated_at=now,
         address=address,
         quartier=str(body.get("quartier") or "").strip() or None,

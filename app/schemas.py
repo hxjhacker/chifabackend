@@ -74,6 +74,7 @@ class OrderUpdate(BaseModel):
     delivery_window: str | None = None
     cross_sell_price_mad: float | None = None
     carrier: str | None = None
+    assigned_team_member_id: str | None = None
 
     @model_validator(mode="before")
     @classmethod

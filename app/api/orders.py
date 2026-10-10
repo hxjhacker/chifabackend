@@ -48,6 +48,7 @@ def _serialize(order: Order) -> dict:
         "total": cents_to_mad(order.total_cents),
         "currency": order.currency,
         "payment_method": order.payment_method,
+        "assigned_team_member_id": order.assigned_team_member_id,
         "items": [
             {
                 "product_slug": i.product_slug,
@@ -159,6 +160,7 @@ def create_order(
         landing_url=payload.landing_url,
         client_ip=client_ip,
         user_agent=request.headers.get("user-agent"),
+        assigned_team_member_id="store",
     )
     session.add(order)
     session.flush()
