@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -35,6 +35,8 @@ QUICK_SENDER_NAME = "chifaglow"
 QUICK_SENDER_CODE = "7513"
 QUICK_SENDER_PHONE = "0644183475"
 QUICK_EXPEDITION = "CASA"
+DEFAULT_VENDOR_NAME = "CHIFA GLOW"
+DEFAULT_VENDOR_PHONE = "06 20 86 38 95"
 TAGLINE = "بإرادتنا حلمكم يوصل"
 DISCLAIMER = "META LIVRAISON EST UNIQUEMENT UNE ENTREPRISE DE LIVRAISON."
 BLUE = Color(0.12, 0.29, 0.56)
@@ -357,6 +359,69 @@ def _spaced(code: str) -> str:
     return " ".join(list((code or "").strip()))
 
 
+def _shipment_date(order: Any) -> str:
+    value = getattr(order, "meta_livraison_sent_at", None) or getattr(order, "created_at", None)
+    if isinstance(value, datetime):
+        try:
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(TZ).strftime("%d/%m/%Y")
+        except Exception:
+            return value.strftime("%d/%m/%Y")
+    if value:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return parsed.astimezone(TZ).strftime("%d/%m/%Y")
+        except Exception:
+            pass
+    return datetime.now(TZ).strftime("%d/%m/%Y")
+
+
+PRODUCT_NAMES = {
+    "quran": "USB القرآن",
+    "taalim": "USB التعليمي",
+    "music": "USB الموسيقى",
+    "zit_alfasokh": "زيت الفسوخ",
+    "alkhatm_alrijali": "الخاتم الرجالي",
+    "almisk_alabyad": "المسك الأبيض",
+    "kids": "USB تعليم الأطفال",
+    "educative": "الفلاشة التعليمية الذكية",
+    "extra": "مفتاح إضافي",
+    "pack-royal-power": "الباك الملكي المتكامل",
+    "pack-royal": "الباك الملكي المتكامل",
+}
+
+
+def _reference_goods(order: Any) -> str:
+    custom = str(getattr(order, "custom_product_name", "") or "").strip()
+    parts: list[str] = []
+    for index, (slug, qty) in enumerate(_sku_lines(order)):
+        name = custom if index == 0 and custom else PRODUCT_NAMES.get(slug, slug)
+        parts.append(f"{name} x {qty}")
+    return " + ".join(parts) or "—"
+
+
+def _carrier_label(order: Any) -> str:
+    carrier = normalize_carrier(getattr(order, "carrier", None))
+    if carrier == "gooli":
+        return "GOOLI EXPRESS"
+    if carrier == CARRIER_QUICK:
+        return "QUICK LIVRAISON"
+    if carrier == "force_log":
+        return "FORCE LOG"
+    return "META LIVRAISON"
+
+
+def _checkbox(c: canvas.Canvas, x: float, y: float, checked: bool) -> None:
+    size = 4.2 * mm
+    c.setLineWidth(1.2)
+    c.rect(x, y, size, size, stroke=1, fill=0)
+    if checked:
+        c.setLineWidth(1.4)
+        c.line(x + 0.8 * mm, y + 2 * mm, x + 1.8 * mm, y + 0.9 * mm)
+        c.line(x + 1.8 * mm, y + 0.9 * mm, x + 3.5 * mm, y + 3.4 * mm)
+
+
 def _fill_black(c: canvas.Canvas, x: float, y: float, w: float, h: float) -> None:
     c.setFillColor(black)
     c.rect(x, y, w, h, stroke=0, fill=1)
@@ -628,11 +693,128 @@ def _draw_quick(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) 
     c.drawCentredString(w / 2, inset + 2.2 * mm, _spaced(tracking))
 
 
+def _draw_reference(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) -> None:
+    _ = tarifs
+    _ensure_fonts()
+    w, h = PAGE
+    inset = 0.7 * mm
+    left, right, bottom, top = inset, w - inset, inset, h - inset
+    order_id = str(getattr(order, "id", "") or "ORDER")
+    tracking = tracking_of(order) or f"CFG-{order_id.replace('-', '')[:6].upper()}"
+    qr_value = _qr_payload(order, tracking)
+    carrier = normalize_carrier(getattr(order, "carrier", None))
+    can_open = carrier == "gooli" or _can_open(order)
+    vendor_name = str(getattr(order, "vendor_name", "") or DEFAULT_VENDOR_NAME).strip() or DEFAULT_VENDOR_NAME
+    vendor_phone = str(getattr(order, "vendor_phone", "") or DEFAULT_VENDOR_PHONE).strip() or DEFAULT_VENDOR_PHONE
+
+    c.setStrokeColor(black)
+    c.setFillColor(black)
+    c.setLineWidth(1.3)
+    c.rect(left, bottom, right - left, top - bottom, stroke=1, fill=0)
+
+    details_bottom = top - 36 * mm
+    flags_bottom = details_bottom - 8.5 * mm
+    product_bottom = flags_bottom - 10 * mm
+    crbt_bottom = product_bottom - 9.5 * mm
+    vendor_bottom = crbt_bottom - 10.5 * mm
+    for y in (details_bottom, flags_bottom, product_bottom, crbt_bottom, vendor_bottom):
+        c.setLineWidth(1.15)
+        c.line(left, y, right, y)
+
+    # Recipient information and carrier mark.
+    logo_left = left + 68 * mm
+    c.setLineWidth(0.8)
+    c.line(logo_left, details_bottom, logo_left, top)
+    label_x = left + 2 * mm
+    value_x = left + 23 * mm
+    value_w = logo_left - value_x - 1.5 * mm
+    details = [
+        ("Nom complet", str(getattr(order, "full_name", "") or "—"), 1),
+        ("Téléphone", _phone(order, "quick"), 1),
+        ("Ville", str(getattr(order, "shipping_city", "") or getattr(order, "city", "") or "—"), 1),
+        ("Adresse", _address(order), 2),
+        ("Commentaire", str(getattr(order, "courier_notes", "") or "—"), 2),
+        ("Date d'envoi", _shipment_date(order), 1),
+    ]
+    row_h = 5.35 * mm
+    cursor_top = top - 2.2 * mm
+    for label, value, max_lines in details:
+        baseline = cursor_top - 2.1 * mm
+        _draw_text(c, f"{label}:", label_x, baseline, 5.7, bold=True)
+        font = _font_for(value, True)
+        lines = _wrap(value, font, 6.5, value_w, max_lines)
+        for line_index, line in enumerate(lines):
+            _draw_text(c, line, value_x, baseline - line_index * 2.4 * mm, 6.5, bold=True)
+        cursor_top -= row_h
+
+    logo_cx = logo_left + (right - logo_left) / 2
+    logo_cy = details_bottom + 22 * mm
+    c.setLineWidth(1.8)
+    c.roundRect(logo_cx - 9.5 * mm, logo_cy - 5.4 * mm, 19 * mm, 10.8 * mm, 4 * mm, stroke=1, fill=0)
+    c.setFont("Helvetica-Bold", 13)
+    c.drawCentredString(logo_cx, logo_cy - 1.8 * mm, "CG")
+    c.setFont("Helvetica-Bold", 7.2)
+    for index, line in enumerate(_wrap(_carrier_label(order), "Helvetica-Bold", 7.2, 28 * mm, 2)):
+        c.drawCentredString(logo_cx, details_bottom + 9.8 * mm - index * 2.8 * mm, line)
+    c.setFont("Helvetica-Bold", 4.3)
+    c.drawCentredString(logo_cx, details_bottom + 3 * mm, "LOGISTICS & SOLUTIONS")
+
+    # Arabic service options.
+    mid = (left + right) / 2
+    c.setLineWidth(0.8)
+    c.line(mid, flags_bottom, mid, details_bottom)
+    box_y = flags_bottom + 2.15 * mm
+    _checkbox(c, left + 4 * mm, box_y, can_open)
+    open_text = "يمكن فتح العلبة" if can_open else "لا يمكن فتح العلبة"
+    _draw_text(c, open_text, left + 11 * mm, flags_bottom + 3 * mm, 7.2, bold=True)
+    _checkbox(c, mid + 4 * mm, box_y, False)
+    _draw_text(c, "استبدال المنتج", mid + 11 * mm, flags_bottom + 3 * mm, 7.2, bold=True)
+
+    # Product and COD amount.
+    _draw_text(c, "Produit:", left + 2 * mm, product_bottom + 3.4 * mm, 7.5, bold=True)
+    goods = _reference_goods(order)
+    goods_font = _font_for(goods, True)
+    goods_lines = _wrap(goods, goods_font, 7.6, right - left - 28 * mm, 2)
+    goods_y = flags_bottom - 3.5 * mm
+    goods_cx = left + 27 * mm + (right - left - 28 * mm) / 2
+    for index, line in enumerate(goods_lines):
+        _draw_text(c, line, goods_cx, goods_y - index * 3 * mm, 7.6, bold=True, align="center")
+
+    _draw_text(c, "CRBT:", left + 2 * mm, crbt_bottom + 3.1 * mm, 10, bold=True)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawCentredString(left + 64 * mm, crbt_bottom + 2.5 * mm, f"{_cod_number(order)} DH")
+
+    # Vendor and thank-you text.
+    _draw_text(c, "Vendeur:", left + 2 * mm, vendor_bottom + 6.2 * mm, 6.7, bold=True)
+    vendor = f"{vendor_name} — {vendor_phone}"
+    _draw_text(c, vendor, left + 18 * mm, vendor_bottom + 6.2 * mm, 6.7, bold=True)
+    c.setFont("Helvetica", 5.6)
+    c.drawString(left + 2 * mm, vendor_bottom + 2.2 * mm, "Nous vous remercions pour votre confiance :")
+
+    # Barcode and QR footer.
+    qr_left = left + (right - left) * 0.70
+    c.setLineWidth(1.15)
+    c.line(qr_left, bottom, qr_left, vendor_bottom)
+    barcode_w = qr_left - left - 4 * mm
+    barcode_h = 12.5 * mm
+    _barcode(c, tracking, left + 2 * mm, bottom + 8.2 * mm, barcode_w, barcode_h)
+    code_font = "Courier-Bold"
+    code_size = 6.8
+    c.setFont(code_font, code_size)
+    code = tracking
+    while code_size > 4.5 and pdfmetrics.stringWidth(code, code_font, code_size) > barcode_w:
+        code_size -= 0.3
+        c.setFont(code_font, code_size)
+    c.drawCentredString((left + qr_left) / 2, bottom + 3.1 * mm, code)
+
+    qr_size = min(23 * mm, vendor_bottom - bottom - 3 * mm)
+    qr_x = qr_left + (right - qr_left - qr_size) / 2
+    qr_y = bottom + (vendor_bottom - bottom - qr_size) / 2
+    c.drawImage(_qr_image(qr_value), qr_x, qr_y, qr_size, qr_size, preserveAspectRatio=True, mask="auto")
+
+
 def _draw_page(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) -> None:
-    if normalize_carrier(getattr(order, "carrier", None)) == CARRIER_QUICK:
-        _draw_quick(c, order, tarifs)
-    else:
-        _draw_meta(c, order, tarifs)
+    _draw_reference(c, order, tarifs)
 
 
 def render_label_pdf(orders: list[Any], tarifs: TarifIndex | None = None) -> bytes:
