@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -37,17 +39,59 @@ PACK_NAMES = {
 }
 
 
+def _clean_secret(value: str | None) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1].strip()
+    return text
+
+
+def _env_file_value(name: str) -> str:
+    roots = [
+        Path(__file__).resolve().parents[2],
+        Path.cwd(),
+        Path.cwd() / "chifabackend",
+    ]
+    for root in roots:
+        for filename in (".env.local", ".env"):
+            path = root / filename
+            if not path.is_file():
+                continue
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                body = line.strip()
+                if not body or body.startswith("#"):
+                    continue
+                if body.startswith("export "):
+                    body = body[7:].strip()
+                if "=" not in body:
+                    continue
+                key, raw = body.split("=", 1)
+                if key.strip() != name:
+                    continue
+                value = _clean_secret(raw)
+                if value:
+                    return value
+    return ""
+
+
+def _setting(name: str, settings_value: str) -> str:
+    return _clean_secret(os.getenv(name)) or _clean_secret(settings_value) or _env_file_value(name)
+
+
 def api_key() -> str:
-    return str(settings.gooli_api_key or "").strip().strip("'\"")
+    return _setting("GOOLI_API_KEY", settings.gooli_api_key)
 
 
 def webhook_secret() -> str:
-    secret = str(settings.gooli_webhook_secret or "").strip().strip("'\"")
-    return secret or api_key()
+    return _setting("GOOLI_WEBHOOK_SECRET", settings.gooli_webhook_secret) or api_key()
 
 
 def api_base() -> str:
-    return (str(settings.gooli_api_base or "https://gooli.pro").strip() or "https://gooli.pro").rstrip("/")
+    return (_setting("GOOLI_API_BASE", settings.gooli_api_base) or "https://gooli.pro").rstrip("/")
 
 
 def configured() -> bool:

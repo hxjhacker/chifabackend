@@ -1,4 +1,18 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+_ENV_FILES = tuple(
+    str(path)
+    for path in (
+        _BACKEND_ROOT / ".env",
+        _BACKEND_ROOT / ".env.local",
+        Path.cwd() / ".env",
+        Path.cwd() / ".env.local",
+    )
+    if path.is_file()
+)
 
 
 def _to_sqlalchemy(url: str) -> str:
@@ -10,7 +24,7 @@ def _to_sqlalchemy(url: str) -> str:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILES or None, extra="ignore")
 
     app_env: str = "production"
     app_name: str = "Chifaglow API"
