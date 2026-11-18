@@ -38,6 +38,11 @@ ORDER_COLUMN_ALTERS = (
     "ALTER TABLE orders ALTER COLUMN city TYPE varchar(160)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier varchar(50) DEFAULT 'meta_livraison' NOT NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier_status varchar(50)",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS gooli_call_proof text",
+    """CREATE TABLE IF NOT EXISTS gooli_webhook_events (
+        event_id varchar(120) PRIMARY KEY,
+        received_at timestamptz NOT NULL DEFAULT now()
+    )""",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatched_at timestamptz",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_cost double precision",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS assigned_team_member_id varchar(64) DEFAULT 'mohammed'",

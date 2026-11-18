@@ -6,24 +6,28 @@ from typing import Any
 
 from app.services.carriers.base import ShippingCarrierBase
 from app.services.carriers.force_log import ForceLogCarrier
+from app.services.carriers.gooli import GooliCarrier
 from app.services.carriers.meta import MetaLivraisonCarrier
 from app.services.carriers.quick import QuickLivraisonCarrier
 
 CARRIER_META = "meta_livraison"
 CARRIER_QUICK = "quick_livraison"
 CARRIER_FORCE = "force_log"
+CARRIER_GOOLI = "gooli"
 DEFAULT_CARRIER = CARRIER_META
-ALLOWED_CARRIERS = (CARRIER_META, CARRIER_QUICK, CARRIER_FORCE)
+ALLOWED_CARRIERS = (CARRIER_META, CARRIER_QUICK, CARRIER_GOOLI, CARRIER_FORCE)
 
 CARRIER_LABELS = {
     CARRIER_META: "Meta Livraison",
     CARRIER_QUICK: "Quick Livraison",
+    CARRIER_GOOLI: "Gooli Express",
     CARRIER_FORCE: "Force Log",
 }
 
 _FACTORIES: dict[str, type[ShippingCarrierBase]] = {
     CARRIER_META: MetaLivraisonCarrier,
     CARRIER_QUICK: QuickLivraisonCarrier,
+    CARRIER_GOOLI: GooliCarrier,
     CARRIER_FORCE: ForceLogCarrier,
 }
 
@@ -37,6 +41,9 @@ def normalize_carrier(value: str | None) -> str:
         "quicklivraison": CARRIER_QUICK,
         "force": CARRIER_FORCE,
         "forcelog": CARRIER_FORCE,
+        "gooli": CARRIER_GOOLI,
+        "gooli_express": CARRIER_GOOLI,
+        "gooliexpress": CARRIER_GOOLI,
     }
     resolved = aliases.get(raw, raw)
     return resolved if resolved in ALLOWED_CARRIERS else DEFAULT_CARRIER

@@ -1306,6 +1306,24 @@ def admin_bulk_livraison(
     session: Session = Depends(get_session),
 ):
     _ = admin
+    if normalize_carrier(payload.carrier) == "gooli":
+        from app.services.gooli import dispatch_gooli_batch
+
+        gooli_tokens: list[str] = []
+        seen_tokens: set[str] = set()
+        for raw in payload.order_ids or []:
+            token = str(raw or "").strip()
+            if not token or token in seen_tokens:
+                continue
+            seen_tokens.add(token)
+            gooli_tokens.append(token)
+            if len(gooli_tokens) >= 1000:
+                break
+        if not gooli_tokens:
+            raise HTTPException(status_code=422, detail="order_ids_required")
+        body = dispatch_gooli_batch(session, gooli_tokens)
+        status_code = int(body.pop("http_status", 200))
+        return JSONResponse(content=body, status_code=status_code)
     tokens = _bulk_tokens(payload)
     if not tokens:
         raise HTTPException(status_code=422, detail="order_ids_required")

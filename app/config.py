@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     meta_livraison_return_fee: float = 0.0
     meta_livraison_refusal_fee: float = 10.0
 
+    gooli_api_key: str = ""
+    gooli_webhook_secret: str = ""
+    gooli_api_base: str = "https://gooli.pro"
+
     quick_livraison_api_url: str = "https://clients.quicklivraison.ma/api"
     quick_livraison_api_key: str = "6sD6fVFImLf0SyE2pzBMdOuiNqUHEJyE"
     forcelog_api_url: str = "https://api.forcelog.ma"
