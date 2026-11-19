@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from io import BytesIO
@@ -10,6 +11,7 @@ from zoneinfo import ZoneInfo
 import arabic_reshaper
 import qrcode
 from bidi.algorithm import get_display
+from qrcode.constants import ERROR_CORRECT_M
 from reportlab.graphics.barcode import code128
 from reportlab.lib.colors import Color, black, white
 from reportlab.lib.units import mm
@@ -95,6 +97,7 @@ HUB_CANON = {
 }
 
 _FONTS: tuple[str, str] | None = None
+log = logging.getLogger(__name__)
 
 
 def tracking_of(order: Any) -> str:
@@ -110,34 +113,98 @@ def tracking_of(order: Any) -> str:
 def _font_files() -> list[tuple[Path, Path]]:
     folder = Path(__file__).resolve().parent.parent / "assets" / "fonts"
     return [
-        (folder / "Amiri-Regular.ttf", folder / "Amiri-Bold.ttf"),
+        # The Docker image installs these. Noto has reliable Arabic presentation
+        # forms, Latin glyphs and both Western/Arabic-Indic digits.
         (Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"), Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf")),
         (Path("/usr/share/fonts/opentype/noto/NotoSansArabic-Regular.ttf"), Path("/usr/share/fonts/opentype/noto/NotoSansArabic-Bold.ttf")),
+        (Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"), Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf")),
+        # Bundled fallback means PDF generation does not depend solely on the OS.
+        (folder / "Amiri-Regular.ttf", folder / "Amiri-Bold.ttf"),
+        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),
         (Path("C:/Windows/Fonts/tahoma.ttf"), Path("C:/Windows/Fonts/tahomabd.ttf")),
         (Path("C:/Windows/Fonts/arial.ttf"), Path("C:/Windows/Fonts/arialbd.ttf")),
-        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),
         (Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"), Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf")),
     ]
+
+
+def _font_probe() -> str:
+    """Characters the embedded label font must support after Arabic shaping."""
+    arabic = "الطلبية الاسم المدينة العنوان المنتوج المبلغ إستبدال فاطمة آمنة ٠١٢٣٤٥٦٧٨٩"
+    try:
+        arabic = get_display(arabic_reshaper.reshape(arabic))
+    except Exception:
+        pass
+    return f"{arabic} ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 -:<>/،—"
+
+
+def _font_missing_glyphs(font_name: str) -> list[str]:
+    font = pdfmetrics.getFont(font_name)
+    widths = getattr(getattr(font, "face", None), "charWidths", {}) or {}
+    if not widths:
+        return list(_font_probe())
+    return sorted({char for char in _font_probe() if not char.isspace() and ord(char) not in widths})
 
 
 def _ensure_fonts() -> tuple[str, str]:
     global _FONTS
     if _FONTS:
         return _FONTS
-    regular, bold = "Helvetica", "Helvetica-Bold"
-    for reg_path, bold_path in _font_files():
+    attempted: list[str] = []
+    for index, (reg_path, bold_path) in enumerate(_font_files()):
         if not reg_path.exists():
+            attempted.append(f"{reg_path} (missing)")
             continue
         try:
-            pdfmetrics.registerFont(TTFont("LabelSans", str(reg_path)))
+            regular = f"LabelSans-{index}"
+            bold = f"LabelSans-Bold-{index}"
             heavy = bold_path if bold_path.exists() else reg_path
-            pdfmetrics.registerFont(TTFont("LabelSans-Bold", str(heavy)))
-            regular, bold = "LabelSans", "LabelSans-Bold"
-            break
-        except Exception:
+            pdfmetrics.registerFont(TTFont(regular, str(reg_path), validate=1))
+            pdfmetrics.registerFont(TTFont(bold, str(heavy), validate=1))
+            missing = sorted(set(_font_missing_glyphs(regular) + _font_missing_glyphs(bold)))
+            if missing:
+                preview = " ".join(f"U+{ord(char):04X}" for char in missing[:12])
+                attempted.append(f"{reg_path} (missing glyphs: {preview})")
+                continue
+            pdfmetrics.registerFontFamily(
+                f"LabelSansFamily-{index}",
+                normal=regular,
+                bold=bold,
+                italic=regular,
+                boldItalic=bold,
+            )
+            _FONTS = (regular, bold)
+            log.info("Shipping-label fonts embedded: regular=%s bold=%s", reg_path, heavy)
+            return _FONTS
+        except Exception as exc:
+            attempted.append(f"{reg_path} ({type(exc).__name__}: {exc})")
             continue
-    _FONTS = (regular, bold)
-    return _FONTS
+    detail = "; ".join(attempted) or "no font candidates configured"
+    raise RuntimeError(
+        "No embeddable Unicode font with Arabic, Latin and digit coverage is available "
+        f"for shipping labels. Checked: {detail}"
+    )
+
+
+def verify_label_fonts() -> dict[str, str]:
+    """Build/startup probe used by Docker and operational diagnostics."""
+    regular, bold = _ensure_fonts()
+    if _font_missing_glyphs(regular) or _font_missing_glyphs(bold):
+        raise RuntimeError("Configured shipping-label font failed Unicode coverage verification")
+    return {"regular": regular, "bold": bold}
+
+
+def verify_unicode_pdf_embedding() -> dict[str, int | str]:
+    """Render a mixed Unicode probe and assert that its TTF program is embedded."""
+    regular, bold = _ensure_fonts()
+    probe = BytesIO()
+    test_canvas = canvas.Canvas(probe, pagesize=(60 * mm, 25 * mm))
+    _draw_text(test_canvas, "الاسم: فاطمة — المدينة: الدار البيضاء", 3 * mm, 16 * mm, 10, bold=True)
+    _draw_text(test_canvas, "Téléphone: 0640108706 — ٠١٢٣٤٥٦٧٨٩", 3 * mm, 8 * mm, 9)
+    test_canvas.save()
+    payload = probe.getvalue()
+    if len(payload) < 1000 or b"/FontFile2" not in payload:
+        raise RuntimeError("Shipping-label Unicode smoke PDF did not contain an embedded TrueType font")
+    return {"regular": regular, "bold": bold, "pdf_bytes": len(payload)}
 
 
 def _shape(text: str) -> str:
@@ -332,10 +399,12 @@ def _qr_payload(order: Any, fallback: str) -> str:
 
 
 def _qr_image(payload: str) -> ImageReader:
-    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=0)
+    qr = qrcode.QRCode(version=None, error_correction=ERROR_CORRECT_M, box_size=8, border=0)
     qr.add_data(payload or " ")
     qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    generated: Any = qr.make_image(fill_color="black", back_color="white")
+    source: Any = generated.get_image() if hasattr(generated, "get_image") else generated
+    img = source.convert("RGB")
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
@@ -351,7 +420,8 @@ def _barcode(c: canvas.Canvas, value: str, x: float, y: float, width: float, hei
             barcode = code128.Code128(value, barHeight=height, barWidth=bar_width, humanReadable=0)
         barcode.drawOn(c, x + max(0, (width - barcode.width) / 2), y)
     except Exception:
-        c.setFont("Helvetica-Bold", 8)
+        _regular, bold = _ensure_fonts()
+        c.setFont(bold, 8)
         c.drawCentredString(x + width / 2, y + height / 2, value)
 
 
@@ -423,6 +493,7 @@ def _checkbox(c: canvas.Canvas, x: float, y: float, checked: bool) -> None:
 
 
 def _draw_livmax_logo(c: canvas.Canvas, cx: float, cy: float) -> None:
+    _regular, bold = _ensure_fonts()
     c.saveState()
     c.setFillColor(black)
     c.setStrokeColor(black)
@@ -431,9 +502,9 @@ def _draw_livmax_logo(c: canvas.Canvas, cx: float, cy: float) -> None:
     c.roundRect(cx - 13.5 * mm, cy - 3.5 * mm, 5.5 * mm, 7 * mm, 1.4 * mm, stroke=1, fill=0)
     c.line(cx - 12 * mm, cy + 1.8 * mm, cx - 9.5 * mm, cy + 1.8 * mm)
     c.line(cx - 12 * mm, cy, cx - 9.5 * mm, cy)
-    c.setFont("Helvetica-Bold", 12)
+    c.setFont(bold, 12)
     c.drawString(cx - 7 * mm, cy - 2.2 * mm, "livmax")
-    c.setFont("Helvetica-Bold", 3.8)
+    c.setFont(bold, 3.8)
     c.drawCentredString(cx, cy - 6 * mm, "LOGISTICS SOLUTIONS")
     c.restoreState()
 
@@ -711,7 +782,7 @@ def _draw_quick(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) 
 
 def _draw_reference(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = None) -> None:
     _ = tarifs
-    _ensure_fonts()
+    _regular_font, bold_font = _ensure_fonts()
     w, h = PAGE
     inset = 1 * mm
     left, right, bottom, top = inset, w - inset, inset, h - inset
@@ -772,13 +843,13 @@ def _draw_reference(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = No
     for index, line in enumerate(goods_lines):
         _draw_text(c, line, goods_cx, goods_y - index * 2.8 * mm, 6.8, bold=True, align="center")
 
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont(bold_font, 11)
     c.drawCentredString((left + right) / 2, crbt_bottom + 3.2 * mm, f"CRBT: {_cod_number(order)} DH")
 
     # Centered production vendor line with the fixed production phone.
-    c.setFont("Helvetica-Bold", 6.6)
+    c.setFont(bold_font, 6.6)
     c.drawCentredString((left + right) / 2, vendor_bottom + 6.5 * mm, f"Vendeur : <-- glow --> - {DEFAULT_VENDOR_PHONE}")
-    c.setFont("Helvetica-Bold", 5.2)
+    c.setFont(bold_font, 5.2)
     c.drawCentredString((left + right) / 2, vendor_bottom + 2.4 * mm, "Nous vous remercions pour votre confiance:")
 
     # Barcode and QR footer.
@@ -788,7 +859,7 @@ def _draw_reference(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = No
     barcode_w = qr_left - left - 4 * mm
     barcode_h = 12 * mm
     _barcode(c, tracking, left + 2 * mm, bottom + 9.5 * mm, barcode_w, barcode_h)
-    code_font = "Courier-Bold"
+    code_font = bold_font
     code_size = 6.8
     c.setFont(code_font, code_size)
     code = tracking

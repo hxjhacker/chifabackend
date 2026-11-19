@@ -11,13 +11,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     ADMIN_JWT_HOURS=12
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl fonts-noto-core \
+    && apt-get install -y --no-install-recommends \
+        openssl \
+        fontconfig \
+        fonts-noto-core \
+        fonts-dejavu-core \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Stop the image build if a Unicode font cannot be embedded with the Arabic
+# presentation forms, Latin glyphs and digits required by thermal labels.
+RUN python -c "from app.services.shipping_label import verify_label_fonts, verify_unicode_pdf_embedding; print(verify_label_fonts()); print(verify_unicode_pdf_embedding())"
 
 EXPOSE 8000
 
