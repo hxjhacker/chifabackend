@@ -113,17 +113,10 @@ def tracking_of(order: Any) -> str:
 def _font_files() -> list[tuple[Path, Path]]:
     folder = Path(__file__).resolve().parent.parent / "assets" / "fonts"
     return [
-        # The Docker image installs these. Noto has reliable Arabic presentation
-        # forms, Latin glyphs and both Western/Arabic-Indic digits.
-        (Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"), Path("/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf")),
-        (Path("/usr/share/fonts/opentype/noto/NotoSansArabic-Regular.ttf"), Path("/usr/share/fonts/opentype/noto/NotoSansArabic-Bold.ttf")),
-        (Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"), Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf")),
-        # Bundled fallback means PDF generation does not depend solely on the OS.
-        (folder / "Amiri-Regular.ttf", folder / "Amiri-Bold.ttf"),
-        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),
-        (Path("C:/Windows/Fonts/tahoma.ttf"), Path("C:/Windows/Fonts/tahomabd.ttf")),
-        (Path("C:/Windows/Fonts/arial.ttf"), Path("C:/Windows/Fonts/arialbd.ttf")),
-        (Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"), Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf")),
+        # Deliberately use only the repository-bundled full Unicode pair.
+        # This prevents Docker/host font discovery from selecting an
+        # Arabic-only subset that renders Latin labels and digits as boxes.
+        (folder / "DejaVuSans.ttf", folder / "DejaVuSans-Bold.ttf"),
     ]
 
 
