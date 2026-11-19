@@ -36,7 +36,7 @@ QUICK_SENDER_CODE = "7513"
 QUICK_SENDER_PHONE = "0644183475"
 QUICK_EXPEDITION = "CASA"
 DEFAULT_VENDOR_NAME = "CHIFA GLOW"
-DEFAULT_VENDOR_PHONE = "06 20 86 38 95"
+DEFAULT_VENDOR_PHONE = "0640108706"
 TAGLINE = "بإرادتنا حلمكم يوصل"
 DISCLAIMER = "META LIVRAISON EST UNIQUEMENT UNE ENTREPRISE DE LIVRAISON."
 BLUE = Color(0.12, 0.29, 0.56)
@@ -422,6 +422,22 @@ def _checkbox(c: canvas.Canvas, x: float, y: float, checked: bool) -> None:
         c.line(x + 1.8 * mm, y + 0.9 * mm, x + 3.5 * mm, y + 3.4 * mm)
 
 
+def _draw_livmax_logo(c: canvas.Canvas, cx: float, cy: float) -> None:
+    c.saveState()
+    c.setFillColor(black)
+    c.setStrokeColor(black)
+    c.setLineWidth(1.4)
+    # Compact delivery mark followed by the production wordmark.
+    c.roundRect(cx - 13.5 * mm, cy - 3.5 * mm, 5.5 * mm, 7 * mm, 1.4 * mm, stroke=1, fill=0)
+    c.line(cx - 12 * mm, cy + 1.8 * mm, cx - 9.5 * mm, cy + 1.8 * mm)
+    c.line(cx - 12 * mm, cy, cx - 9.5 * mm, cy)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(cx - 7 * mm, cy - 2.2 * mm, "livmax")
+    c.setFont("Helvetica-Bold", 3.8)
+    c.drawCentredString(cx, cy - 6 * mm, "LOGISTICS SOLUTIONS")
+    c.restoreState()
+
+
 def _fill_black(c: canvas.Canvas, x: float, y: float, w: float, h: float) -> None:
     c.setFillColor(black)
     c.rect(x, y, w, h, stroke=0, fill=1)
@@ -697,107 +713,81 @@ def _draw_reference(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = No
     _ = tarifs
     _ensure_fonts()
     w, h = PAGE
-    inset = 0.7 * mm
+    inset = 1 * mm
     left, right, bottom, top = inset, w - inset, inset, h - inset
     order_id = str(getattr(order, "id", "") or "ORDER")
     tracking = tracking_of(order) or f"CFG-{order_id.replace('-', '')[:6].upper()}"
     qr_value = _qr_payload(order, tracking)
-    carrier = normalize_carrier(getattr(order, "carrier", None))
-    can_open = carrier == "gooli" or _can_open(order)
-    vendor_name = str(getattr(order, "vendor_name", "") or DEFAULT_VENDOR_NAME).strip() or DEFAULT_VENDOR_NAME
-    vendor_phone = str(getattr(order, "vendor_phone", "") or DEFAULT_VENDOR_PHONE).strip() or DEFAULT_VENDOR_PHONE
 
     c.setStrokeColor(black)
     c.setFillColor(black)
     c.setLineWidth(1.3)
     c.rect(left, bottom, right - left, top - bottom, stroke=1, fill=0)
 
-    details_bottom = top - 36 * mm
+    details_bottom = top - 32.5 * mm
     flags_bottom = details_bottom - 8.5 * mm
     product_bottom = flags_bottom - 10 * mm
-    crbt_bottom = product_bottom - 9.5 * mm
-    vendor_bottom = crbt_bottom - 10.5 * mm
+    crbt_bottom = product_bottom - 10 * mm
+    vendor_bottom = crbt_bottom - 11 * mm
     for y in (details_bottom, flags_bottom, product_bottom, crbt_bottom, vendor_bottom):
         c.setLineWidth(1.15)
         c.line(left, y, right, y)
 
-    # Recipient information and carrier mark.
-    logo_left = left + 68 * mm
-    c.setLineWidth(0.8)
-    c.line(logo_left, details_bottom, logo_left, top)
+    # Recipient information and floating Livmax mark in one undivided box.
     label_x = left + 2 * mm
-    value_x = left + 23 * mm
-    value_w = logo_left - value_x - 1.5 * mm
+    value_x = left + 20 * mm
     details = [
-        ("Nom complet", str(getattr(order, "full_name", "") or "—"), 1),
-        ("Téléphone", _phone(order, "quick"), 1),
-        ("Ville", str(getattr(order, "shipping_city", "") or getattr(order, "city", "") or "—"), 1),
-        ("Adresse", _address(order), 2),
-        ("Commentaire", str(getattr(order, "courier_notes", "") or "—"), 2),
-        ("Date d'envoi", _shipment_date(order), 1),
+        ("Nom complet", str(getattr(order, "full_name", "") or "—"), top - 4 * mm, 1, True),
+        ("Téléphone", _phone(order, "quick"), top - 8.2 * mm, 1, True),
+        ("Ville", str(getattr(order, "shipping_city", "") or getattr(order, "city", "") or "—"), top - 12.4 * mm, 1, True),
+        ("Adresse", _address(order), top - 16.6 * mm, 2, False),
+        ("Commentaire", str(getattr(order, "courier_notes", "") or "—"), top - 22.3 * mm, 2, False),
+        ("Date d'envoi", _shipment_date(order), top - 28.8 * mm, 1, False),
     ]
-    row_h = 5.35 * mm
-    cursor_top = top - 2.2 * mm
-    for label, value, max_lines in details:
-        baseline = cursor_top - 2.1 * mm
-        _draw_text(c, f"{label}:", label_x, baseline, 5.7, bold=True)
+    for label, value, baseline, max_lines, under_logo in details:
+        _draw_text(c, f"{label}:", label_x, baseline, 5.5, bold=True)
         font = _font_for(value, True)
+        value_w = (right - 29 * mm if under_logo else right - 2 * mm) - value_x
         lines = _wrap(value, font, 6.5, value_w, max_lines)
         for line_index, line in enumerate(lines):
-            _draw_text(c, line, value_x, baseline - line_index * 2.4 * mm, 6.5, bold=True)
-        cursor_top -= row_h
+            _draw_text(c, line, value_x, baseline - line_index * 2.3 * mm, 6.2, bold=True)
 
-    logo_cx = logo_left + (right - logo_left) / 2
-    logo_cy = details_bottom + 22 * mm
-    c.setLineWidth(1.8)
-    c.roundRect(logo_cx - 9.5 * mm, logo_cy - 5.4 * mm, 19 * mm, 10.8 * mm, 4 * mm, stroke=1, fill=0)
-    c.setFont("Helvetica-Bold", 13)
-    c.drawCentredString(logo_cx, logo_cy - 1.8 * mm, "CG")
-    c.setFont("Helvetica-Bold", 7.2)
-    for index, line in enumerate(_wrap(_carrier_label(order), "Helvetica-Bold", 7.2, 28 * mm, 2)):
-        c.drawCentredString(logo_cx, details_bottom + 9.8 * mm - index * 2.8 * mm, line)
-    c.setFont("Helvetica-Bold", 4.3)
-    c.drawCentredString(logo_cx, details_bottom + 3 * mm, "LOGISTICS & SOLUTIONS")
+    _draw_livmax_logo(c, right - 13.5 * mm, top - 7.2 * mm)
 
     # Arabic service options.
     mid = (left + right) / 2
-    c.setLineWidth(0.8)
-    c.line(mid, flags_bottom, mid, details_bottom)
     box_y = flags_bottom + 2.15 * mm
-    _checkbox(c, left + 4 * mm, box_y, can_open)
-    open_text = "يمكن فتح العلبة" if can_open else "لا يمكن فتح العلبة"
-    _draw_text(c, open_text, left + 11 * mm, flags_bottom + 3 * mm, 7.2, bold=True)
-    _checkbox(c, mid + 4 * mm, box_y, False)
-    _draw_text(c, "استبدال المنتج", mid + 11 * mm, flags_bottom + 3 * mm, 7.2, bold=True)
+    _checkbox(c, left + 5 * mm, box_y, False)
+    _draw_text(c, "لا يمكنك فتح الطلبية", left + 29 * mm, flags_bottom + 3 * mm, 6.6, bold=True, align="center")
+    _checkbox(c, mid + 5 * mm, box_y, False)
+    _draw_text(c, "إستبدال المنتوج", mid + 28 * mm, flags_bottom + 3 * mm, 6.6, bold=True, align="center")
 
     # Product and COD amount.
-    _draw_text(c, "Produit:", left + 2 * mm, product_bottom + 3.4 * mm, 7.5, bold=True)
+    _draw_text(c, "Produit:", left + 2 * mm, product_bottom + 3.4 * mm, 6.5, bold=True)
     goods = _reference_goods(order)
     goods_font = _font_for(goods, True)
-    goods_lines = _wrap(goods, goods_font, 7.6, right - left - 28 * mm, 2)
+    goods_lines = _wrap(goods, goods_font, 6.8, right - left - 23 * mm, 2)
     goods_y = flags_bottom - 3.5 * mm
-    goods_cx = left + 27 * mm + (right - left - 28 * mm) / 2
+    goods_cx = left + 20 * mm + (right - left - 22 * mm) / 2
     for index, line in enumerate(goods_lines):
-        _draw_text(c, line, goods_cx, goods_y - index * 3 * mm, 7.6, bold=True, align="center")
+        _draw_text(c, line, goods_cx, goods_y - index * 2.8 * mm, 6.8, bold=True, align="center")
 
-    _draw_text(c, "CRBT:", left + 2 * mm, crbt_bottom + 3.1 * mm, 10, bold=True)
-    c.setFont("Helvetica-Bold", 15)
-    c.drawCentredString(left + 64 * mm, crbt_bottom + 2.5 * mm, f"{_cod_number(order)} DH")
+    c.setFont("Helvetica-Bold", 11)
+    c.drawCentredString((left + right) / 2, crbt_bottom + 3.2 * mm, f"CRBT: {_cod_number(order)} DH")
 
-    # Vendor and thank-you text.
-    _draw_text(c, "Vendeur:", left + 2 * mm, vendor_bottom + 6.2 * mm, 6.7, bold=True)
-    vendor = f"{vendor_name} — {vendor_phone}"
-    _draw_text(c, vendor, left + 18 * mm, vendor_bottom + 6.2 * mm, 6.7, bold=True)
-    c.setFont("Helvetica", 5.6)
-    c.drawString(left + 2 * mm, vendor_bottom + 2.2 * mm, "Nous vous remercions pour votre confiance :")
+    # Centered production vendor line with the fixed production phone.
+    c.setFont("Helvetica-Bold", 6.6)
+    c.drawCentredString((left + right) / 2, vendor_bottom + 6.5 * mm, f"Vendeur : <-- glow --> - {DEFAULT_VENDOR_PHONE}")
+    c.setFont("Helvetica-Bold", 5.2)
+    c.drawCentredString((left + right) / 2, vendor_bottom + 2.4 * mm, "Nous vous remercions pour votre confiance:")
 
     # Barcode and QR footer.
-    qr_left = left + (right - left) * 0.70
+    qr_left = left + (right - left) * 0.68
     c.setLineWidth(1.15)
     c.line(qr_left, bottom, qr_left, vendor_bottom)
     barcode_w = qr_left - left - 4 * mm
-    barcode_h = 12.5 * mm
-    _barcode(c, tracking, left + 2 * mm, bottom + 8.2 * mm, barcode_w, barcode_h)
+    barcode_h = 12 * mm
+    _barcode(c, tracking, left + 2 * mm, bottom + 9.5 * mm, barcode_w, barcode_h)
     code_font = "Courier-Bold"
     code_size = 6.8
     c.setFont(code_font, code_size)
@@ -805,9 +795,9 @@ def _draw_reference(c: canvas.Canvas, order: Any, tarifs: TarifIndex | None = No
     while code_size > 4.5 and pdfmetrics.stringWidth(code, code_font, code_size) > barcode_w:
         code_size -= 0.3
         c.setFont(code_font, code_size)
-    c.drawCentredString((left + qr_left) / 2, bottom + 3.1 * mm, code)
+    c.drawCentredString((left + qr_left) / 2, bottom + 4.1 * mm, code)
 
-    qr_size = min(23 * mm, vendor_bottom - bottom - 3 * mm)
+    qr_size = min(22 * mm, vendor_bottom - bottom - 4 * mm)
     qr_x = qr_left + (right - qr_left - qr_size) / 2
     qr_y = bottom + (vendor_bottom - bottom - qr_size) / 2
     c.drawImage(_qr_image(qr_value), qr_x, qr_y, qr_size, qr_size, preserveAspectRatio=True, mask="auto")
